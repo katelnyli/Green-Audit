@@ -70,6 +70,8 @@ async def _run_audit(audit_id: str, url: str, credentials: dict | None):
         )
         job = _jobs[audit_id]
         job.status = "done"
+        # Pass live_url from job status to result
+        result.live_url = job.live_url
         job.result = result
     except Exception as e:
         job = _jobs.get(audit_id)

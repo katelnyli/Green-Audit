@@ -23,7 +23,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 MAX_PAGES = 4          # stop collecting after this many — keeps demo fast
-POLL_INTERVAL = 3.0    # seconds between browser-use step polls
+POLL_INTERVAL = 1.0    # seconds between browser-use step polls (reduced from 3.0)
 CRAWL_TIMEOUT = 150    # bail out after 2.5 min regardless
 
 _PROMPT = (
@@ -55,7 +55,7 @@ async def crawl(
     task_resp = await client.tasks.create(
         task=prompt,
         start_url=url,
-        max_steps=40,
+        max_steps=15,  # reduced from 40 — we only need 4 pages, don't waste steps
     )
     task_id = str(task_resp.id)
     session_id = str(task_resp.session_id)
