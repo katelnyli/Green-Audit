@@ -103,6 +103,7 @@ export interface AuditStatus {
   total: number | null;
   current_url: string | null;
   live_url: string | null;
+  live_urls: string[];
   pages_discovered: string[];
   agent_status: string | null;
   result: AuditResult | null;

@@ -65,6 +65,7 @@ async def _run_audit(audit_id: str, url: str, credentials: dict | None):
                 audit_id, phase, progress, total, current_url
             ),
             on_live_url=lambda live_url: _set_live_url(audit_id, live_url),
+            on_agent_live_url=lambda idx, live_url: _add_agent_live_url(audit_id, idx, live_url),
             on_page_discovered=lambda page_url: _add_discovered_page(audit_id, page_url),
             on_agent_status=lambda status: _set_agent_status(audit_id, status),
         )
@@ -91,6 +92,18 @@ def _set_live_url(audit_id: str, live_url: str):
     job = _jobs.get(audit_id)
     if job:
         job.live_url = live_url
+
+
+def _add_agent_live_url(audit_id: str, idx: int, live_url: str):
+    job = _jobs.get(audit_id)
+    if not job:
+        return
+    urls = list(job.live_urls)
+    # Grow the list to fit this index if needed
+    while len(urls) <= idx:
+        urls.append("")
+    urls[idx] = live_url
+    job.live_urls = urls
 
 
 def _add_discovered_page(audit_id: str, page_url: str):
