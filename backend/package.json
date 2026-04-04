@@ -1,0 +1,8 @@
+{
+  "name": "green-audit-backend-carbon",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@tgwf/co2": "^0.18.0"
+  }
+}
