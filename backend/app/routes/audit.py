@@ -1,9 +1,8 @@
 import asyncio
 import json
 from uuid import uuid4
-from datetime import datetime, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.models.audit import AuditRequest, AuditStarted, AuditStatus
@@ -24,7 +23,10 @@ async def start_audit(req: AuditRequest):
 
 @router.get("/{audit_id}", response_model=AuditStatus)
 async def get_audit(audit_id: str):
-    return _jobs[audit_id]
+    job = _jobs.get(audit_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Audit not found")
+    return job
 
 
 @router.get("/{audit_id}/stream")
@@ -62,6 +64,9 @@ async def _run_audit(audit_id: str, url: str, credentials: dict | None):
             on_progress=lambda phase, progress, total, current_url: _update_progress(
                 audit_id, phase, progress, total, current_url
             ),
+            on_live_url=lambda live_url: _set_live_url(audit_id, live_url),
+            on_page_discovered=lambda page_url: _add_discovered_page(audit_id, page_url),
+            on_agent_status=lambda status: _set_agent_status(audit_id, status),
         )
         job = _jobs[audit_id]
         job.status = "done"
@@ -80,3 +85,22 @@ def _update_progress(audit_id: str, phase: str, progress: int, total: int, curre
         job.progress = progress
         job.total = total
         job.current_url = current_url
+
+
+def _set_live_url(audit_id: str, live_url: str):
+    job = _jobs.get(audit_id)
+    if job:
+        job.live_url = live_url
+
+
+def _add_discovered_page(audit_id: str, page_url: str):
+    job = _jobs.get(audit_id)
+    if job and page_url not in job.pages_discovered:
+        job.pages_discovered = job.pages_discovered + [page_url]
+        job.current_url = page_url
+
+
+def _set_agent_status(audit_id: str, status: str):
+    job = _jobs.get(audit_id)
+    if job:
+        job.agent_status = status

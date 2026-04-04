@@ -103,8 +103,11 @@ class AuditStarted(BaseModel):
 class AuditStatus(BaseModel):
     audit_id: str
     status: Literal["queued", "crawling", "scoring", "generating_fixes", "done", "error"]
-    progress: int | None = None   # pages completed so far
+    progress: int | None = None       # pages completed so far
     total: int | None = None
     current_url: str | None = None
+    live_url: str | None = None       # browser-use live preview URL for iframe
+    pages_discovered: list[str] = []  # URLs found so far during crawl
+    agent_status: str | None = None   # latest browser-use step goal — updates every few seconds
     result: AuditResult | None = None
     error: str | None = None

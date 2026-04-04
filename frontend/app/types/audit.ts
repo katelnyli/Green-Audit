@@ -102,6 +102,9 @@ export interface AuditStatus {
   progress: number | null;
   total: number | null;
   current_url: string | null;
+  live_url: string | null;
+  pages_discovered: string[];
+  agent_status: string | null;
   result: AuditResult | null;
   error: string | null;
 }

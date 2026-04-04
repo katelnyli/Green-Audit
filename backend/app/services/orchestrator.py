@@ -18,15 +18,24 @@ async def run_full_audit(
     url: str,
     credentials: dict | None,
     on_progress: Callable[[str, int, int, str], None],
+    on_live_url: Callable[[str], None] | None = None,
+    on_page_discovered: Callable[[str], None] | None = None,
+    on_agent_status: Callable[[str], None] | None = None,
 ) -> AuditResult:
     from app.crawler.client import crawl
 
-    # ── Phase 1: crawl ──────────────────────────────────────────────────────
+    # ── Phase 1: crawl ────────────────────────────────────────────────────────
     on_progress("crawling", 0, 0, url)
-    raw_pages = await crawl(url, credentials)
+    raw_pages = await crawl(
+        url,
+        credentials,
+        on_live_url=on_live_url,
+        on_page_discovered=on_page_discovered,
+        on_agent_status=on_agent_status,
+    )
     total = len(raw_pages)
 
-    # ── Phase 2: score all pages concurrently ────────────────────────────────
+    # ── Phase 2: score all pages concurrently ─────────────────────────────────
     on_progress("scoring", 0, total, url)
     lh_results = await asyncio.gather(
         *[lh_service.score(raw["url"]) for raw in raw_pages],
@@ -41,7 +50,7 @@ async def run_full_audit(
 
     summary = scoring.build_summary(pages)
 
-    # ── Phase 3: generate code fixes for all pages concurrently ─────────────
+    # ── Phase 3: generate code fixes for all pages concurrently ──────────────
     on_progress("generating_fixes", 0, total, url)
     fix_tasks = [
         codegen_service.generate_fixes_for_page(page, raw_pages[i].get("dom_context", ""))
