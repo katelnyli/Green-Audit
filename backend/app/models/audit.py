@@ -73,12 +73,22 @@ class Summary(BaseModel):
     grade: Literal["A", "B", "C", "D", "F"]
 
 
+class CodeFix(BaseModel):
+    flag_type: str
+    page_url: str
+    description: str
+    code_snippet: str
+    estimated_co2_saved: float
+    injection_js: str
+
+
 class AuditResult(BaseModel):
     audit_id: str
     target_url: str
     crawled_at: str
     pages: list[Page]
     summary: Summary
+    fixes: list[CodeFix] = []
 
 
 class AuditRequest(BaseModel):
