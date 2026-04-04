@@ -1,21 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import type { AuditResult, CodeFix, Impact, Grade } from "@/app/types/audit";
-import SplitPreview from "@/app/components/SplitPreview";
-
-const GRADE_COLORS: Record<Grade, string> = {
-  A: "text-green-400 border-green-700 bg-green-950",
-  B: "text-lime-400 border-lime-700 bg-lime-950",
-  C: "text-yellow-400 border-yellow-700 bg-yellow-950",
-  D: "text-orange-400 border-orange-700 bg-orange-950",
-  F: "text-red-400 border-red-700 bg-red-950",
-};
+import type { AuditResult, Impact, Page, CodeFix } from "@/app/types/audit";
 
 const IMPACT_COLORS: Record<Impact, string> = {
-  high: "text-red-400 bg-red-950",
-  medium: "text-yellow-400 bg-yellow-950",
-  low: "text-blue-400 bg-blue-950",
+  high: "bg-[#2a0f0f] text-[#c87e7e] border-[#4a1a1a]",
+  medium: "bg-[#2a1f0a] text-[#c8a87e] border-[#4a3a1a]",
+  low: "bg-[#0a1f0a] text-[#7ea87e] border-[#1a3a1a]",
 };
 
 function fmt(bytes: number) {
@@ -23,170 +14,332 @@ function fmt(bytes: number) {
   return `${(bytes / 1_000).toFixed(0)} KB`;
 }
 
+function getScoreColor(score: number): string {
+  if (score < 50) return "#c87e7e";
+  if (score < 70) return "#c8a87e";
+  return "#7ec87e";
+}
+
 export default function ReportView({ result }: { result: AuditResult }) {
   const { summary, pages, fixes } = result;
-  const [previewPage, setPreviewPage] = useState<string | null>(null);
+  const [selectedFixes, setSelectedFixes] = useState<Set<number>>(
+    new Set(fixes.map((_, i) => i)) // all checked by default
+  );
+  const [previewMode, setPreviewMode] = useState<"before" | "after">("before");
+  const [activeTab, setActiveTab] = useState(0);
 
-  const fixesByPage = fixes.reduce<Record<string, CodeFix[]>>((acc, fix) => {
-    (acc[fix.page_url] ??= []).push(fix);
-    return acc;
-  }, {});
+  const toggleFix = (idx: number) => {
+    setSelectedFixes((prev) => {
+      const next = new Set(prev);
+      next.has(idx) ? next.delete(idx) : next.add(idx);
+      return next;
+    });
+  };
 
-  const previewPageData = pages.find((p) => p.url === previewPage);
-  const previewFixes = previewPage ? (fixesByPage[previewPage] ?? []) : [];
+  const exportPatch = () => {
+    const domain = new URL(result.target_url).hostname;
+    const date = new Date().toISOString().split("T")[0];
+
+    let patch = `=== GREEN AUDIT PATCH — ${domain} ===\nGenerated: ${date}\n\n`;
+
+    selectedFixes.forEach((idx) => {
+      const fix = fixes[idx];
+      const impact = summary.top_flags.find(f => f.type === fix.flag_type)?.impact || "medium";
+      const impactLabel = impact.toUpperCase();
+
+      const pageUrl = new URL(fix.page_url).pathname || "/";
+      patch += `[${impactLabel}] ${pageUrl} — ${fix.description}\n${fix.code_snippet}\n\n`;
+    });
+
+    const blob = new Blob([patch], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `green-audit-${domain}-${date}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Sort pages by transfer size for "worst pages" bar chart
+  const sortedPages = [...pages].sort((a, b) => b.transfer_size_bytes - a.transfer_size_bytes).slice(0, 10);
+  const maxTransfer = sortedPages[0]?.transfer_size_bytes || 1;
+
+  // Calculate average score for circular display
+  const avgPerformance = pages.length > 0
+    ? Math.round(pages.reduce((sum, p) => sum + p.lighthouse.performance, 0) / pages.length)
+    : 0;
+
+  // Get selected fixes for tabs
+  const activeFixes = fixes.filter((_, i) => selectedFixes.has(i));
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-12 space-y-12">
-      {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-4">
-        <div>
-          <a href="/" className="text-zinc-500 hover:text-white text-sm mb-2 inline-block">
-            ← New audit
-          </a>
-          <h1 className="text-2xl font-bold text-white">{result.target_url}</h1>
-          <p className="text-zinc-500 text-sm mt-1">
-            {summary.total_pages_crawled} pages · {new Date(result.crawled_at).toLocaleString()}
-          </p>
-        </div>
-        <div className={`text-6xl font-black border-2 rounded-2xl w-24 h-24 flex items-center justify-center ${GRADE_COLORS[summary.grade]}`}>
-          {summary.grade}
-        </div>
-      </div>
-
-      {/* Summary stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: "Total CO₂", value: `${summary.total_estimated_co2_grams.toFixed(2)}g` },
-          { label: "Total transfer", value: fmt(summary.total_transfer_bytes) },
-          { label: "Pages crawled", value: summary.total_pages_crawled },
-          { label: "Total fixes", value: fixes.length },
-        ].map(({ label, value }) => (
-          <div key={label} className="rounded-xl bg-zinc-900 border border-zinc-800 p-5">
-            <p className="text-zinc-500 text-xs mb-1">{label}</p>
-            <p className="text-white text-2xl font-bold">{value}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Sections ranked */}
-      <section>
-        <h2 className="text-lg font-semibold text-white mb-4">Sections by CO₂ impact</h2>
-        <div className="rounded-xl border border-zinc-800 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-zinc-900 text-zinc-400 text-left">
-                <th className="px-4 py-3 font-medium">Section</th>
-                <th className="px-4 py-3 font-medium">Pages</th>
-                <th className="px-4 py-3 font-medium">CO₂</th>
-                <th className="px-4 py-3 font-medium">Share</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800">
-              {summary.sections_ranked.map((s) => {
-                const pct = summary.total_estimated_co2_grams > 0
-                  ? Math.round((s.co2_grams / summary.total_estimated_co2_grams) * 100)
-                  : 0;
-                return (
-                  <tr key={s.section} className="hover:bg-zinc-900/50 transition-colors">
-                    <td className="px-4 py-3 text-white font-mono">/{s.section}</td>
-                    <td className="px-4 py-3 text-zinc-400">{s.page_count}</td>
-                    <td className="px-4 py-3 text-zinc-300">{s.co2_grams.toFixed(4)}g</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 rounded-full bg-zinc-800 flex-1 max-w-[80px]">
-                          <div
-                            className="h-full rounded-full bg-green-600"
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                        <span className="text-zinc-500 text-xs w-8">{pct}%</span>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* Top flags */}
-      <section>
-        <h2 className="text-lg font-semibold text-white mb-4">Most common issues</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {summary.top_flags.map((f) => (
-            <div key={f.type} className="rounded-xl bg-zinc-900 border border-zinc-800 p-4 flex items-center justify-between gap-4">
-              <div>
-                <span className={`text-xs font-medium px-2 py-0.5 rounded ${IMPACT_COLORS[f.impact]}`}>
-                  {f.impact}
-                </span>
-                <p className="mt-1.5 text-white text-sm font-mono">{f.type}</p>
+    <div className="flex h-screen bg-[#0a0f0a] text-[#e8ede8]">
+      {/* LEFT COLUMN */}
+      <div className="w-[300px] border-r border-[#1a2a1a] flex flex-col overflow-y-auto">
+        <div className="p-6 space-y-6">
+          {/* Summary chips */}
+          <div>
+            <a href="/" className="text-[#4a6a4a] hover:text-[#7ec87e] text-xs font-mono mb-4 inline-block">
+              ← New audit
+            </a>
+            <div className="space-y-2">
+              <div className="bg-[#0f1a0f] border border-[#1a2a1a] rounded p-3">
+                <div className="text-[#2a4a2a] text-xs font-mono uppercase">Pages</div>
+                <div className="text-xl font-mono font-bold text-[#7ec87e]">{summary.total_pages_crawled}</div>
               </div>
-              <span className="text-2xl font-bold text-zinc-300">{f.occurrences}</span>
+              <div className="bg-[#0f1a0f] border border-[#1a2a1a] rounded p-3">
+                <div className="text-[#2a4a2a] text-xs font-mono uppercase">Transfer</div>
+                <div className="text-xl font-mono font-bold text-[#7ec87e]">{fmt(summary.total_transfer_bytes)}</div>
+              </div>
+              <div className="bg-[#0f1a0f] border border-[#1a2a1a] rounded p-3">
+                <div className="text-[#2a4a2a] text-xs font-mono uppercase">CO₂</div>
+                <div className="text-xl font-mono font-bold text-[#7ec87e]">{summary.total_estimated_co2_grams.toFixed(1)}g</div>
+              </div>
+              <div className="bg-[#0f1a0f] border border-[#1a2a1a] rounded p-3">
+                <div className="text-[#2a4a2a] text-xs font-mono uppercase">Grade</div>
+                <div className="text-xl font-mono font-bold text-[#7ec87e]">{summary.grade}</div>
+              </div>
             </div>
-          ))}
-        </div>
-      </section>
+          </div>
 
-      {/* Per-page breakdown */}
-      <section>
-        <h2 className="text-lg font-semibold text-white mb-4">Page breakdown</h2>
-        <div className="space-y-3">
-          {pages
-            .slice()
-            .sort((a, b) => b.estimated_co2_grams - a.estimated_co2_grams)
-            .map((page) => (
-              <div
-                key={page.url}
-                className="rounded-xl bg-zinc-900 border border-zinc-800 p-5 space-y-3"
-              >
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div className="min-w-0">
-                    <p className="text-white text-sm font-mono truncate">{page.url}</p>
-                    <div className="flex gap-4 mt-1 text-xs text-zinc-500">
-                      <span>{page.estimated_co2_grams.toFixed(4)}g CO₂</span>
-                      <span>{fmt(page.transfer_size_bytes)}</span>
-                      <span>{page.load_time_ms}ms</span>
-                      <span>LH {page.lighthouse.performance}</span>
+          {/* Worst pages bar chart */}
+          <div>
+            <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-3">Worst Pages</div>
+            <div className="space-y-1.5">
+              {sortedPages.map((page, i) => {
+                const pct = (page.transfer_size_bytes / maxTransfer) * 100;
+                const color = pct > 80 ? "#c87e7e" : pct > 50 ? "#c8a87e" : "#7ea87e";
+                return (
+                  <div key={i}>
+                    <div className="text-xs font-mono text-[#4a6a4a] truncate">{new URL(page.url).pathname || "/"}</div>
+                    <div className="h-1.5 bg-[#0f1a0f] rounded-full overflow-hidden">
+                      <div className="h-full" style={{ width: `${pct}%`, backgroundColor: color }} />
                     </div>
                   </div>
-                  {fixesByPage[page.url]?.length > 0 && (
-                    <button
-                      onClick={() =>
-                        setPreviewPage(previewPage === page.url ? null : page.url)
-                      }
-                      className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-green-700 hover:bg-green-600 text-white font-medium transition-colors"
-                    >
-                      {previewPage === page.url ? "Close preview" : `Preview ${fixesByPage[page.url].length} fixes`}
-                    </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Prioritized actions */}
+          <div className="flex-1">
+            <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-3">Prioritized Actions</div>
+            <div className="space-y-2">
+              {fixes.map((fix, i) => {
+                const impact = summary.top_flags.find(f => f.type === fix.flag_type)?.impact || "medium";
+                return (
+                  <div key={i} className="bg-[#0f1a0f] border border-[#1a2a1a] rounded p-3">
+                    <div className="flex items-start gap-2 mb-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedFixes.has(i)}
+                        onChange={() => toggleFix(i)}
+                        className="mt-0.5 w-3.5 h-3.5 rounded border-[#1a2a1a] bg-[#0a0f0a] text-[#7ec87e]"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className={`text-xs px-1.5 py-0.5 rounded inline-block font-mono border ${IMPACT_COLORS[impact]}`}>
+                          {impact.toUpperCase()}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-xs font-mono text-[#e8ede8] leading-snug">{fix.flag_type}</div>
+                    <div className="text-xs text-[#4a6a4a] mt-1">{fix.description}</div>
+                    {fix.estimated_co2_saved > 0 && (
+                      <div className="text-xs text-[#7ec87e] font-mono mt-1">
+                        ~{fix.estimated_co2_saved.toFixed(2)}g saved
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Buttons pinned to bottom */}
+        <div className="p-4 border-t border-[#1a2a1a] space-y-2">
+          <button
+            onClick={() => setPreviewMode("after")}
+            className="w-full py-2.5 bg-[#7ec87e] text-[#0a0f0a] font-mono text-sm font-semibold rounded hover:bg-[#6db86d] transition-colors"
+          >
+            Preview fixes
+          </button>
+          <button
+            onClick={exportPatch}
+            disabled={selectedFixes.size === 0}
+            className="w-full py-2.5 border border-[#1a2a1a] text-[#7ec87e] font-mono text-sm font-semibold rounded hover:bg-[#0f1a0f] transition-colors disabled:opacity-40"
+          >
+            Export patch
+          </button>
+        </div>
+      </div>
+
+      {/* CENTER COLUMN - Full website comparison */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header with Before/After toggle */}
+        <div className="p-4 border-b border-[#1a2a1a] flex items-center justify-between">
+          <div className="flex gap-1 bg-[#0f1a0f] border border-[#1a2a1a] rounded p-1">
+            <button
+              onClick={() => setPreviewMode("before")}
+              className={`px-4 py-1.5 rounded text-sm font-mono transition-colors ${
+                previewMode === "before"
+                  ? "bg-[#7ec87e] text-[#0a0f0a]"
+                  : "text-[#4a6a4a] hover:text-[#7ec87e]"
+              }`}
+            >
+              Before
+            </button>
+            <button
+              onClick={() => setPreviewMode("after")}
+              className={`px-4 py-1.5 rounded text-sm font-mono transition-colors ${
+                previewMode === "after"
+                  ? "bg-[#7ec87e] text-[#0a0f0a]"
+                  : "text-[#4a6a4a] hover:text-[#7ec87e]"
+              }`}
+            >
+              After
+            </button>
+          </div>
+          <div className="text-xs font-mono text-[#4a6a4a]">{result.target_url}</div>
+        </div>
+
+        {/* Full height website preview */}
+        <div className="flex-1 flex flex-col bg-[#0f1a0f] p-4">
+          {previewMode === "after" && (
+            <div className="bg-[#7ec87e] text-[#0a0f0a] px-4 py-2 text-xs font-mono rounded mb-2 flex items-center justify-between">
+              <span>Fixes previewed — changes are non-destructive and temporary.</span>
+              {selectedFixes.size > 0 && (
+                <span className="font-bold">{selectedFixes.size} fixes applied</span>
+              )}
+            </div>
+          )}
+          <div className="flex-1 bg-white border border-[#1a2a1a] rounded overflow-hidden">
+            <iframe
+              src={result.target_url}
+              className="w-full h-full"
+              sandbox="allow-scripts allow-same-origin allow-forms"
+              title={previewMode === "before" ? "Original site" : "Preview with fixes"}
+            />
+          </div>
+          <div className="text-xs font-mono text-[#2a4a2a] mt-2 text-center">
+            Some sites block iframe embedding. If preview is blank, use Export Patch to apply fixes directly.
+          </div>
+          {/* TODO: replace iframe overlay with real postMessage injection once proxy is ready */}
+        </div>
+      </div>
+
+      {/* RIGHT COLUMN */}
+      <div className="w-[280px] border-l border-[#1a2a1a] flex flex-col overflow-y-auto">
+        <div className="p-6 space-y-6">
+          {/* Circular sustainability score */}
+          <div className="flex flex-col items-center">
+            <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-4">Sustainability Score</div>
+            <div
+              className="w-32 h-32 rounded-full flex items-center justify-center"
+              style={{
+                border: `6px solid ${getScoreColor(avgPerformance)}`,
+              }}
+            >
+              <div className="text-center">
+                <div className="text-3xl font-mono font-bold" style={{ color: getScoreColor(avgPerformance) }}>
+                  {avgPerformance}
+                </div>
+                <div className="text-xs font-mono text-[#4a6a4a]">/100</div>
+              </div>
+            </div>
+            <div className="text-xs font-mono text-[#2a4a2a] mt-2">Avg performance score</div>
+          </div>
+
+          {/* Score breakdown bars */}
+          <div>
+            <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-3">Score Breakdown</div>
+            <div className="space-y-2">
+              <div>
+                <div className="flex justify-between text-xs font-mono mb-1">
+                  <span className="text-[#4a6a4a]">Performance</span>
+                  <span style={{ color: getScoreColor(avgPerformance) }}>{avgPerformance}</span>
+                </div>
+                <div className="h-1.5 bg-[#0f1a0f] rounded-full overflow-hidden">
+                  <div
+                    className="h-full"
+                    style={{ width: `${avgPerformance}%`, backgroundColor: getScoreColor(avgPerformance) }}
+                  />
+                </div>
+              </div>
+              {/* TODO: backend does not yet return category-level scores - showing only performance */}
+            </div>
+          </div>
+
+          {/* Section heatmap */}
+          {summary.sections_ranked.length > 0 && (
+            <div>
+              <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-3">Where is the carbon coming from?</div>
+              <div className="space-y-2">
+                {summary.sections_ranked.map((section, i) => {
+                  const pct = (section.co2_grams / summary.total_estimated_co2_grams) * 100;
+                  const color = pct > 40 ? "#c87e7e" : pct > 20 ? "#c8a87e" : "#7ea87e";
+                  return (
+                    <div key={i}>
+                      <div className="flex justify-between text-xs font-mono mb-1">
+                        <span className="text-[#4a6a4a]">/{section.section}</span>
+                        <span style={{ color }}>{pct.toFixed(0)}%</span>
+                      </div>
+                      <div className="h-1.5 bg-[#0f1a0f] rounded-full overflow-hidden">
+                        <div className="h-full" style={{ width: `${pct}%`, backgroundColor: color }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Per-page breakdown table */}
+          <div className="flex-1">
+            <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-3">Per-page Breakdown</div>
+            <div className="space-y-2">
+              {pages.map((page, i) => (
+                <div key={i} className="bg-[#0f1a0f] border border-[#1a2a1a] rounded p-2">
+                  <div className="text-xs font-mono text-[#7ec87e] truncate">{new URL(page.url).pathname || "/"}</div>
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1 mt-1">
+                    <div className="text-xs font-mono text-[#2a4a2a]">
+                      {fmt(page.transfer_size_bytes)}
+                    </div>
+                    <div className="text-xs font-mono text-[#2a4a2a]">
+                      {page.estimated_co2_grams.toFixed(1)}g
+                    </div>
+                  </div>
+                  {page.flags.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {page.flags.slice(0, 2).map((flag, j) => (
+                        <div
+                          key={j}
+                          className={`text-xs px-1 py-0.5 rounded font-mono border ${IMPACT_COLORS[flag.impact]}`}
+                        >
+                          {flag.impact[0].toUpperCase()}
+                        </div>
+                      ))}
+                      {page.flags.length > 2 && (
+                        <div className="text-xs text-[#4a6a4a] font-mono">+{page.flags.length - 2}</div>
+                      )}
+                    </div>
                   )}
                 </div>
-
-                {page.flags.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {page.flags.map((flag, i) => (
-                      <span
-                        key={i}
-                        className={`text-xs px-2 py-0.5 rounded font-medium ${IMPACT_COLORS[flag.impact]}`}
-                        title={flag.detail}
-                      >
-                        {flag.type}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {previewPage === page.url && (
-                  <SplitPreview
-                    pageUrl={page.url}
-                    fixes={previewFixes}
-                    baselineCo2={page.estimated_co2_grams}
-                  />
-                )}
-              </div>
-            ))}
+              ))}
+            </div>
+          </div>
         </div>
-      </section>
+
+        {/* Export button at bottom */}
+        <div className="p-4 border-t border-[#1a2a1a]">
+          <button
+            onClick={exportPatch}
+            className="w-full py-2.5 border border-[#1a2a1a] text-[#7ec87e] font-mono text-sm font-semibold rounded hover:bg-[#0f1a0f] transition-colors"
+          >
+            Export full report
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
