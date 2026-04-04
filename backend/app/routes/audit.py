@@ -1,0 +1,73 @@
+import asyncio
+import json
+from uuid import uuid4
+from datetime import datetime, timezone
+
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
+
+from app.models.audit import AuditRequest, AuditStarted, AuditStatus
+
+router = APIRouter()
+
+# In-memory store — fine for a hackathon
+_jobs: dict[str, AuditStatus] = {}
+
+
+@router.post("", response_model=AuditStarted)
+async def start_audit(req: AuditRequest):
+    audit_id = str(uuid4())
+    _jobs[audit_id] = AuditStatus(audit_id=audit_id, status="queued")
+    asyncio.create_task(_run_audit(audit_id, str(req.url), req.credentials))
+    return AuditStarted(audit_id=audit_id)
+
+
+@router.get("/{audit_id}", response_model=AuditStatus)
+async def get_audit(audit_id: str):
+    return _jobs[audit_id]
+
+
+@router.get("/{audit_id}/stream")
+async def stream_audit(audit_id: str):
+    async def event_stream():
+        while True:
+            job = _jobs.get(audit_id)
+            if job is None:
+                yield f"data: {json.dumps({'error': 'not found'})}\n\n"
+                break
+            yield f"data: {job.model_dump_json()}\n\n"
+            if job.status in ("done", "error"):
+                break
+            await asyncio.sleep(1)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+async def _run_audit(audit_id: str, url: str, credentials: dict | None):
+    from app.services.orchestrator import run_full_audit
+
+    job = _jobs[audit_id]
+    job.status = "crawling"
+
+    try:
+        result = await run_full_audit(
+            audit_id=audit_id,
+            url=url,
+            credentials=credentials,
+            on_progress=lambda progress, total, current_url: _update_progress(
+                audit_id, progress, total, current_url
+            ),
+        )
+        job.status = "done"
+        job.result = result
+    except Exception as e:
+        job.status = "error"
+        job.error = str(e)
+
+
+def _update_progress(audit_id: str, progress: int, total: int, current_url: str):
+    job = _jobs.get(audit_id)
+    if job:
+        job.progress = progress
+        job.total = total
+        job.current_url = current_url
