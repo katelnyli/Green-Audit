@@ -77,9 +77,9 @@ class CodeFix(BaseModel):
     flag_type: str
     page_url: str
     description: str
-    code_snippet: str
+    code_snippet: str        # actual implementable code, specific to the page
     estimated_co2_saved: float
-    injection_js: str
+    injection_js: str        # javascript to inject this fix live into the DOM
 
 
 class AuditResult(BaseModel):
@@ -102,7 +102,7 @@ class AuditStarted(BaseModel):
 
 class AuditStatus(BaseModel):
     audit_id: str
-    status: Literal["queued", "crawling", "scoring", "done", "error"]
+    status: Literal["queued", "crawling", "scoring", "generating_fixes", "done", "error"]
     progress: int | None = None   # pages completed so far
     total: int | None = None
     current_url: str | None = None

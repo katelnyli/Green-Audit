@@ -1,40 +1,46 @@
 """
-Runs Lighthouse CLI against a URL and returns performance + best_practices scores.
-Requires: npm install -g lighthouse
+Fetches Lighthouse scores via the Google PageSpeed Insights API.
+No local install required — just an HTTP call.
+Get a free API key at https://developers.google.com/speed/docs/insights/v5/get-started
+Without a key, requests are rate-limited to ~25/day. Fine for a hackathon demo.
 """
 
-import asyncio
-import json
-import tempfile
-from pathlib import Path
+import logging
+import os
+
+import httpx
 
 from app.models.audit import LighthouseScores
 
+logger = logging.getLogger(__name__)
+
+_PSI_URL = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
+_API_KEY = os.getenv("PAGESPEED_API_KEY")  # optional — works without it, just rate-limited
+
 
 async def score(url: str) -> LighthouseScores:
-    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-        output_path = f.name
+    params: dict = {
+        "url": url,
+        "strategy": "desktop",
+        "category": ["performance", "best-practices"],
+    }
+    if _API_KEY:
+        params["key"] = _API_KEY
 
-    proc = await asyncio.create_subprocess_exec(
-        "lighthouse",
-        url,
-        "--output=json",
-        f"--output-path={output_path}",
-        "--chrome-flags=--headless --no-sandbox",
-        "--only-categories=performance,best-practices",
-        "--quiet",
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-    await proc.wait()
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(_PSI_URL, params=params)
+            resp.raise_for_status()
+            data = resp.json()
 
-    data = json.loads(Path(output_path).read_text())
-    categories = data.get("categories", {})
-
-    return LighthouseScores(
-        performance=_to_int(categories.get("performance", {}).get("score")),
-        best_practices=_to_int(categories.get("best-practices", {}).get("score")),
-    )
+        cats = data.get("lighthouseResult", {}).get("categories", {})
+        return LighthouseScores(
+            performance=_to_int(cats.get("performance", {}).get("score")),
+            best_practices=_to_int(cats.get("best-practices", {}).get("score")),
+        )
+    except Exception as e:
+        logger.warning("PageSpeed Insights failed for %s: %s", url, e)
+        return LighthouseScores(performance=0, best_practices=0)
 
 
 def _to_int(score: float | None) -> int:

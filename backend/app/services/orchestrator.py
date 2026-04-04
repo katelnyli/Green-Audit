@@ -1,56 +1,57 @@
 """
-Orchestrates: crawler output → Lighthouse → CO2 → summary → AuditResult
+Orchestrates the full audit pipeline:
+  crawl → score each page (Lighthouse + CO2 + flags) → generate code fixes → assemble report
 """
 
-from collections import defaultdict
+import asyncio
 from datetime import datetime, timezone
 from typing import Callable
 
-from app.models.audit import (
-    AuditResult,
-    Flag,
-    Page,
-    SectionSummary,
-    Summary,
-    TopFlag,
-)
-from app.services import co2 as co2_service
+from app.models.audit import AuditResult, LighthouseScores, Page, Summary
+from app.services import codegen as codegen_service
 from app.services import lighthouse as lh_service
-from app.services.section_detector import detect_section
-from app.crawler.client import crawl
+from app.services import scoring
 
 
 async def run_full_audit(
     audit_id: str,
     url: str,
     credentials: dict | None,
-    on_progress: Callable[[int, int, str], None],
+    on_progress: Callable[[str, int, int, str], None],
 ) -> AuditResult:
+    from app.crawler.client import crawl
+
+    # ── Phase 1: crawl ──────────────────────────────────────────────────────
+    on_progress("crawling", 0, 0, url)
     raw_pages = await crawl(url, credentials)
+    total = len(raw_pages)
 
+    # ── Phase 2: score all pages concurrently ────────────────────────────────
+    on_progress("scoring", 0, total, url)
+    lh_results = await asyncio.gather(
+        *[lh_service.score(raw["url"]) for raw in raw_pages],
+        return_exceptions=True,
+    )
     pages: list[Page] = []
-    for i, raw in enumerate(raw_pages):
-        on_progress(i + 1, len(raw_pages), raw["url"])
+    for raw, lh in zip(raw_pages, lh_results):
+        if isinstance(lh, Exception):
+            lh = LighthouseScores(performance=0, best_practices=0)
+        pages.append(scoring.assemble_page(raw, lh))
+    on_progress("scoring", total, total, url)
 
-        lh_scores = await lh_service.score(raw["url"])
-        co2_grams = co2_service.estimate_co2(raw["transfer_size_bytes"])
-        section = detect_section(raw["url"])
+    summary = scoring.build_summary(pages)
 
-        pages.append(
-            Page(
-                url=raw["url"],
-                section=section,
-                load_time_ms=raw["load_time_ms"],
-                transfer_size_bytes=raw["transfer_size_bytes"],
-                request_count=raw["request_count"],
-                resources=raw["resources"],
-                lighthouse=lh_scores,
-                estimated_co2_grams=co2_grams,
-                flags=raw.get("flags", []),
-            )
-        )
-
-    summary = _build_summary(pages)
+    # ── Phase 3: generate code fixes for all pages concurrently ─────────────
+    on_progress("generating_fixes", 0, total, url)
+    fix_tasks = [
+        codegen_service.generate_fixes_for_page(page, raw_pages[i].get("dom_context", ""))
+        for i, page in enumerate(pages)
+    ]
+    fix_results = await asyncio.gather(*fix_tasks, return_exceptions=True)
+    all_fixes = []
+    for r in fix_results:
+        if not isinstance(r, Exception):
+            all_fixes.extend(r)
 
     return AuditResult(
         audit_id=audit_id,
@@ -58,47 +59,5 @@ async def run_full_audit(
         crawled_at=datetime.now(timezone.utc).isoformat(),
         pages=pages,
         summary=summary,
-    )
-
-
-def _build_summary(pages: list[Page]) -> Summary:
-    total_bytes = sum(p.transfer_size_bytes for p in pages)
-    total_co2 = sum(p.estimated_co2_grams for p in pages)
-    avg_co2 = total_co2 / len(pages) if pages else 0
-
-    section_map: dict[str, dict] = defaultdict(lambda: {"co2": 0.0, "count": 0})
-    flag_map: dict[str, dict] = defaultdict(lambda: {"occurrences": 0, "impact": "low"})
-
-    for page in pages:
-        section_map[page.section]["co2"] += page.estimated_co2_grams
-        section_map[page.section]["count"] += 1
-        for flag in page.flags:
-            flag_map[flag.type]["occurrences"] += 1
-            flag_map[flag.type]["impact"] = flag.impact
-
-    sections_ranked = sorted(
-        [
-            SectionSummary(section=k, co2_grams=round(v["co2"], 4), page_count=v["count"])
-            for k, v in section_map.items()
-        ],
-        key=lambda s: s.co2_grams,
-        reverse=True,
-    )
-
-    top_flags = sorted(
-        [
-            TopFlag(type=k, occurrences=v["occurrences"], impact=v["impact"])
-            for k, v in flag_map.items()
-        ],
-        key=lambda f: f.occurrences,
-        reverse=True,
-    )
-
-    return Summary(
-        total_pages_crawled=len(pages),
-        total_transfer_bytes=total_bytes,
-        total_estimated_co2_grams=round(total_co2, 4),
-        sections_ranked=sections_ranked,
-        top_flags=top_flags,
-        grade=co2_service.grade(avg_co2),
+        fixes=all_fixes,
     )

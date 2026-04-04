@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { startAudit } from "@/app/lib/api";
 
 export default function Home() {
   const router = useRouter();
@@ -9,16 +10,21 @@ export default function Home() {
   const [showCredentials, setShowCredentials] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [maxPages, setMaxPages] = useState(50);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const params = new URLSearchParams({
-      url,
-      ...(showCredentials && { username, password }),
-      maxPages: maxPages.toString(),
-    });
-    router.push(`/progress?${params.toString()}`);
+    setError("");
+    setLoading(true);
+    try {
+      const creds = showCredentials && username ? { username, password } : undefined;
+      const { audit_id } = await startAudit(url, creds);
+      router.push(`/progress?audit_id=${audit_id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to start audit");
+      setLoading(false);
+    }
   };
 
   return (
@@ -76,26 +82,16 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Page Cap */}
-              <div>
-                <label className="block text-sm text-[#a0a0a0] mb-2">
-                  Max pages to scan
-                </label>
-                <input
-                  type="number"
-                  value={maxPages}
-                  onChange={(e) => setMaxPages(Number(e.target.value))}
-                  min="1"
-                  max="500"
-                  className="w-full px-4 py-3 bg-[#0a0f0a] border border-[#1a2a1a] rounded text-[#ededed] font-mono focus:outline-none focus:border-[#7ec87e]"
-                />
-              </div>
+              {error && (
+                <div className="text-[#ff6b6b] text-sm">{error}</div>
+              )}
 
               <button
                 type="submit"
-                className="w-full py-4 bg-[#7ec87e] text-[#0a0f0a] font-semibold rounded hover:bg-[#6db86d] transition-colors"
+                disabled={loading}
+                className="w-full py-4 bg-[#7ec87e] text-[#0a0f0a] font-semibold rounded hover:bg-[#6db86d] transition-colors disabled:bg-[#3a5a3a] disabled:cursor-not-allowed"
               >
-                Run Audit
+                {loading ? "Starting..." : "Run Audit"}
               </button>
             </form>
           </div>

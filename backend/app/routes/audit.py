@@ -40,34 +40,43 @@ async def stream_audit(audit_id: str):
                 break
             await asyncio.sleep(1)
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 async def _run_audit(audit_id: str, url: str, credentials: dict | None):
     from app.services.orchestrator import run_full_audit
-
-    job = _jobs[audit_id]
-    job.status = "crawling"
 
     try:
         result = await run_full_audit(
             audit_id=audit_id,
             url=url,
             credentials=credentials,
-            on_progress=lambda progress, total, current_url: _update_progress(
-                audit_id, progress, total, current_url
+            on_progress=lambda phase, progress, total, current_url: _update_progress(
+                audit_id, phase, progress, total, current_url
             ),
         )
+        job = _jobs[audit_id]
         job.status = "done"
         job.result = result
     except Exception as e:
-        job.status = "error"
-        job.error = str(e)
+        job = _jobs.get(audit_id)
+        if job:
+            job.status = "error"
+            job.error = str(e)
 
 
-def _update_progress(audit_id: str, progress: int, total: int, current_url: str):
+def _update_progress(audit_id: str, phase: str, progress: int, total: int, current_url: str):
     job = _jobs.get(audit_id)
     if job:
+        job.status = phase  # type: ignore[assignment]
         job.progress = progress
         job.total = total
         job.current_url = current_url
