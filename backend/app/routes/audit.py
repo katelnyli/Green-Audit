@@ -40,7 +40,15 @@ async def stream_audit(audit_id: str):
                 break
             await asyncio.sleep(1)
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 async def _run_audit(audit_id: str, url: str, credentials: dict | None):

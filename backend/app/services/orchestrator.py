@@ -3,10 +3,11 @@ Orchestrates the full audit pipeline:
   crawl → score each page (Lighthouse + CO2 + flags) → generate code fixes → assemble report
 """
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Callable
 
-from app.models.audit import AuditResult, Page, Summary
+from app.models.audit import AuditResult, LighthouseScores, Page, Summary
 from app.services import codegen as codegen_service
 from app.services import lighthouse as lh_service
 from app.services import scoring
@@ -25,24 +26,32 @@ async def run_full_audit(
     raw_pages = await crawl(url, credentials)
     total = len(raw_pages)
 
-    # ── Phase 2: score each page ─────────────────────────────────────────────
+    # ── Phase 2: score all pages concurrently ────────────────────────────────
+    on_progress("scoring", 0, total, url)
+    lh_results = await asyncio.gather(
+        *[lh_service.score(raw["url"]) for raw in raw_pages],
+        return_exceptions=True,
+    )
     pages: list[Page] = []
-    for i, raw in enumerate(raw_pages):
-        on_progress("scoring", i + 1, total, raw["url"])
-        lh_scores = await lh_service.score(raw["url"])
-        page = scoring.assemble_page(raw, lh_scores)
-        pages.append(page)
+    for raw, lh in zip(raw_pages, lh_results):
+        if isinstance(lh, Exception):
+            lh = LighthouseScores(performance=0, best_practices=0)
+        pages.append(scoring.assemble_page(raw, lh))
+    on_progress("scoring", total, total, url)
 
     summary = scoring.build_summary(pages)
 
-    # ── Phase 3: generate code fixes via Claude ──────────────────────────────
+    # ── Phase 3: generate code fixes for all pages concurrently ─────────────
     on_progress("generating_fixes", 0, total, url)
+    fix_tasks = [
+        codegen_service.generate_fixes_for_page(page, raw_pages[i].get("dom_context", ""))
+        for i, page in enumerate(pages)
+    ]
+    fix_results = await asyncio.gather(*fix_tasks, return_exceptions=True)
     all_fixes = []
-    for i, page in enumerate(pages):
-        on_progress("generating_fixes", i + 1, total, page.url)
-        dom_context = raw_pages[i].get("dom_context", "")
-        fixes = await codegen_service.generate_fixes_for_page(page, dom_context)
-        all_fixes.extend(fixes)
+    for r in fix_results:
+        if not isinstance(r, Exception):
+            all_fixes.extend(r)
 
     return AuditResult(
         audit_id=audit_id,
