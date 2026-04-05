@@ -5,8 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { streamAudit } from "@/app/lib/api";
 import type { AuditStatus } from "@/app/types/audit";
 
-const AGENT_LABELS = ["Navigation", "Products & Services", "About & Blog"];
-
 export default function Progress() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -14,8 +12,7 @@ export default function Progress() {
 
   const [status, setStatus] = useState<AuditStatus | null>(null);
   const [error, setError] = useState("");
-  const [activeAgent, setActiveAgent] = useState(0);
-  const [blockedAgents, setBlockedAgents] = useState<boolean[]>([false, false, false]);
+  const [iframeBlocked, setIframeBlocked] = useState(false);
   const pagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -78,7 +75,7 @@ export default function Progress() {
     error: "Error",
   };
 
-  const activeUrl = liveUrls[activeAgent] ?? null;
+  const activeUrl = liveUrls[0] ?? liveUrl;
 
   return (
     <div className="flex h-screen bg-[#0a0f0a]">
@@ -167,52 +164,25 @@ export default function Progress() {
         </div>
       </div>
 
-      {/* ── RIGHT: Tabbed agent view ───────────────────────────────────────── */}
+      {/* ── RIGHT: Live agent view ────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0">
 
-        {/* Tab bar */}
-        <div className="flex items-stretch border-b border-[#1a2a1a] shrink-0 bg-[#0a0f0a]">
-          {[0, 1, 2].map((idx) => {
-            const hasUrl = !!liveUrls[idx];
-            const isActive = activeAgent === idx;
-            return (
-              <button
-                key={idx}
-                onClick={() => setActiveAgent(idx)}
-                className={`flex items-center gap-2 px-5 py-3 text-xs font-mono border-r border-[#1a2a1a] transition-colors relative
-                  ${isActive
-                    ? "bg-[#0f1a0f] text-[#ededed]"
-                    : "text-[#606060] hover:text-[#a0a0a0] hover:bg-[#0f1a0f]/50"
-                  }`}
-              >
-                {/* Active tab indicator line */}
-                {isActive && (
-                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#7ec87e]" />
-                )}
-                <div className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors ${
-                  hasUrl ? "bg-[#7ec87e] animate-pulse" : "bg-[#303030]"
-                }`} />
-                <span>Agent {idx + 1}</span>
-                <span className={`hidden sm:inline ${isActive ? "text-[#606060]" : "text-[#404040]"}`}>
-                  — {AGENT_LABELS[idx]}
-                </span>
-              </button>
-            );
-          })}
-
-          {/* Spacer + open-in-tab link */}
-          <div className="flex-1 flex items-center justify-end px-4">
-            {activeUrl && (
-              <a
-                href={activeUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[#606060] hover:text-[#7ec87e] text-xs transition-colors"
-              >
-                Open in new tab ↗
-              </a>
-            )}
+        {/* Header bar */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-[#1a2a1a] shrink-0 bg-[#0a0f0a]">
+          <div className="flex items-center gap-2">
+            <div className={`w-1.5 h-1.5 rounded-full ${activeUrl ? "bg-[#7ec87e] animate-pulse" : "bg-[#303030]"}`} />
+            <span className="text-xs font-mono text-[#606060] uppercase tracking-wider">Live Browser</span>
           </div>
+          {activeUrl && (
+            <a
+              href={activeUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#606060] hover:text-[#7ec87e] text-xs transition-colors"
+            >
+              Open in new tab ↗
+            </a>
+          )}
         </div>
 
         {/* URL bar */}
@@ -223,22 +193,15 @@ export default function Progress() {
         </div>
 
         {/* Iframe panel */}
-        {activeUrl && !blockedAgents[activeAgent] ? (
+        {activeUrl && !iframeBlocked ? (
           <iframe
-            key={activeAgent}
             src={activeUrl}
             className="flex-1 w-full bg-[#0f1a0f]"
-            title={`Agent ${activeAgent + 1}`}
+            title="Live browser"
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-            onError={() =>
-              setBlockedAgents((prev) => {
-                const next = [...prev];
-                next[activeAgent] = true;
-                return next;
-              })
-            }
+            onError={() => setIframeBlocked(true)}
           />
-        ) : activeUrl && blockedAgents[activeAgent] ? (
+        ) : activeUrl && iframeBlocked ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-4 bg-[#0f1a0f]">
             <div className="text-[#606060] text-sm">Preview blocked by site security policy.</div>
             <a
@@ -247,7 +210,7 @@ export default function Progress() {
               rel="noopener noreferrer"
               className="px-4 py-2 bg-[#7ec87e] text-[#0a0f0a] text-sm font-semibold rounded hover:bg-[#6db86d] transition-colors"
             >
-              Watch Agent {activeAgent + 1} live in new tab ↗
+              Watch live in new tab ↗
             </a>
           </div>
         ) : (
@@ -268,10 +231,7 @@ export default function Progress() {
                 <>
                   <div className="w-14 h-14 border-4 border-[#7ec87e] border-t-transparent rounded-full animate-spin mx-auto" />
                   <div className="text-[#7ec87e] font-mono text-sm">
-                    Agent {activeAgent + 1} connecting…
-                  </div>
-                  <div className="text-[#404040] text-xs">
-                    {liveUrls.filter(Boolean).length} of 3 agents live
+                    Waiting for live preview…
                   </div>
                 </>
               )}

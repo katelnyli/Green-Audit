@@ -4,12 +4,13 @@ const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export async function startAudit(
   url: string,
-  credentials?: { username: string; password: string }
+  credentials?: { username: string; password: string },
+  maxPages?: number
 ): Promise<{ audit_id: string }> {
   const res = await fetch(`${BASE}/audit`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url, credentials: credentials ?? null }),
+    body: JSON.stringify({ url, credentials: credentials ?? null, max_pages: maxPages ?? 10 }),
   });
   if (!res.ok) throw new Error(`Failed to start audit: ${res.statusText}`);
   return res.json();

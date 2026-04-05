@@ -95,6 +95,7 @@ class AuditResult(BaseModel):
 class AuditRequest(BaseModel):
     url: HttpUrl
     credentials: dict[str, str] | None = None
+    max_pages: int = 10
 
 
 class AuditStarted(BaseModel):

@@ -10,6 +10,7 @@ export default function Home() {
   const [showCredentials, setShowCredentials] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [maxPages, setMaxPages] = useState(10);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -19,7 +20,7 @@ export default function Home() {
     setLoading(true);
     try {
       const creds = showCredentials && username ? { username, password } : undefined;
-      const { audit_id } = await startAudit(url, creds);
+      const { audit_id } = await startAudit(url, creds, maxPages);
       router.push(`/progress?audit_id=${audit_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start audit");
@@ -80,6 +81,27 @@ export default function Home() {
                     />
                   </div>
                 )}
+              </div>
+
+              {/* Page count selector */}
+              <div>
+                <div className="text-[#606060] text-sm mb-3">Pages to crawl</div>
+                <div className="flex gap-2">
+                  {[5, 10, 15, 20].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setMaxPages(n)}
+                      className={`flex-1 py-2 rounded font-mono text-sm border transition-colors ${
+                        maxPages === n
+                          ? "bg-[#7ec87e] text-[#0a0f0a] border-[#7ec87e]"
+                          : "bg-[#0a0f0a] text-[#606060] border-[#1a2a1a] hover:border-[#7ec87e] hover:text-[#7ec87e]"
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {error && (
