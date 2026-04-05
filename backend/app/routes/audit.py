@@ -130,6 +130,7 @@ def _add_discovered_page(audit_id: str, page_url: str):
     if job and page_url not in job.pages_discovered:
         job.pages_discovered = job.pages_discovered + [page_url]
         job.current_url = page_url
+        job.progress = len(job.pages_discovered)
 
 
 def _set_agent_status(audit_id: str, status: str):

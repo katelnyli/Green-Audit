@@ -29,7 +29,8 @@ async def run_full_audit(
     from app.crawler.client import crawl
 
     # ── Phase 1: crawl ────────────────────────────────────────────────────────
-    on_progress("crawling", 0, 0, url)
+    # Pass max_pages as total so the frontend can show X/max_pages during crawl.
+    on_progress("crawling", 0, max_pages, url)
     raw_pages = await crawl(
         url,
         credentials,
@@ -41,48 +42,83 @@ async def run_full_audit(
     )
     total = len(raw_pages)
 
-    # ── Phase 2: score all pages concurrently ─────────────────────────────────
+    # ── Phase 2: score all pages — emit one progress tick per page ────────────
     on_progress("scoring", 0, total, url)
-    lh_results = await asyncio.gather(
-        *[lh_service.score(raw["url"]) for raw in raw_pages],
-        return_exceptions=True,
-    )
+
+    completed = 0
+    lock = asyncio.Lock()
+    lh_results: list = [None] * total
+
+    async def _score_one(idx: int, raw: dict):
+        nonlocal completed
+        try:
+            result = await lh_service.score(raw["url"])
+        except Exception as e:
+            result = e
+        async with lock:
+            completed += 1
+            on_progress("scoring", completed, total, raw["url"])
+        lh_results[idx] = result
+
+    await asyncio.gather(*[_score_one(i, raw) for i, raw in enumerate(raw_pages)])
+
     pages: list[Page] = []
     for raw, lh in zip(raw_pages, lh_results):
-        if isinstance(lh, Exception):
+        if isinstance(lh, Exception) or lh is None:
             lh = LighthouseScores(performance=0, best_practices=0)
         pages.append(scoring.assemble_page(raw, lh))
-    on_progress("scoring", total, total, url)
 
     summary = scoring.build_summary(pages)
-    
+
     # Save intermediate result so early termination shows data
     if on_pages_scored:
         on_pages_scored(pages)
-    
+
     # Check if user requested termination after scoring
     if should_stop_after_scoring and should_stop_after_scoring():
-        # Return early without generating fixes
         return AuditResult(
             audit_id=audit_id,
             target_url=url,
             crawled_at=datetime.now(timezone.utc).isoformat(),
             pages=pages,
             summary=summary,
-            fixes=[],  # No fixes since we're stopping early
+            fixes=[],
         )
 
-    # ── Phase 3: generate code fixes for all pages concurrently ──────────────
+    # ── Phase 3: generate code fixes — emit one progress tick per page ────────
     on_progress("generating_fixes", 0, total, url)
-    fix_tasks = [
-        codegen_service.generate_fixes_for_page(page, raw_pages[i].get("dom_context", ""))
-        for i, page in enumerate(pages)
-    ]
-    fix_results = await asyncio.gather(*fix_tasks, return_exceptions=True)
+
+    fix_completed = 0
+    fix_lock = asyncio.Lock()
+    fix_results: list = [None] * total
+
+    async def _fix_one(idx: int, page: Page):
+        nonlocal fix_completed
+        dom_context = raw_pages[idx].get("dom_context", "")
+        try:
+            result = await codegen_service.generate_fixes_for_page(page, dom_context)
+        except Exception as e:
+            result = e
+        async with fix_lock:
+            fix_completed += 1
+            on_progress("generating_fixes", fix_completed, total, page.url)
+        fix_results[idx] = result
+
+    await asyncio.gather(*[_fix_one(i, page) for i, page in enumerate(pages)])
+
     all_fixes = []
     for r in fix_results:
-        if not isinstance(r, Exception):
+        if r is not None and not isinstance(r, Exception):
             all_fixes.extend(r)
+
+    # Cap at 3 fixes per flag type, keeping the highest CO2 savings
+    all_fixes.sort(key=lambda f: f.estimated_co2_saved, reverse=True)
+    type_counts: dict[str, int] = {}
+    capped_fixes = []
+    for fix in all_fixes:
+        if type_counts.get(fix.flag_type, 0) < 3:
+            capped_fixes.append(fix)
+            type_counts[fix.flag_type] = type_counts.get(fix.flag_type, 0) + 1
 
     return AuditResult(
         audit_id=audit_id,
@@ -90,5 +126,5 @@ async def run_full_audit(
         crawled_at=datetime.now(timezone.utc).isoformat(),
         pages=pages,
         summary=summary,
-        fixes=all_fixes,
+        fixes=capped_fixes,
     )
