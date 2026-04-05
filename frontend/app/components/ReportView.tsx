@@ -127,8 +127,8 @@ export default function ReportView({ result }: { result: AuditResult }) {
             Export {fixes.length} fixes ↓
           </button>
           {showExportInfo && (
-            <div className="absolute top-full mt-2 right-0 w-64 bg-[#0f1a0f] border border-[#7ec87e] rounded-lg p-4 text-[#a0a0a0] text-xs leading-relaxed z-20 shadow-lg whitespace-normal">
-              <p className="font-mono mb-2 text-[#7ec87e]">GTM Container Format</p>
+            <div className="absolute top-full mt-2 right-0 w-64 bg-[#1a1a1a] border border-[#333333] rounded-lg p-4 text-[#888888] text-xs leading-relaxed z-20 shadow-lg whitespace-normal">
+              <p className="font-mono mb-2 text-[#a0a0a0]">GTM Container Format</p>
               <p>This exports a Google Tag Manager container JSON file. Simply:</p>
               <ol className="list-decimal list-inside mt-2 space-y-1">
                 <li>Download the JSON file</li>
