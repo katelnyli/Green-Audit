@@ -23,32 +23,17 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-MAX_PAGES = 20         # total pages to collect across all agents
+MAX_PAGES = 10         # total pages to collect across all agents
 NUM_AGENTS = 3         # parallel browser-use agents
-PAGES_PER_AGENT = (MAX_PAGES + NUM_AGENTS - 1) // NUM_AGENTS  # ceil(20/3) = 7
-POLL_INTERVAL = 1.0    # seconds between browser-use step polls (reduced from 3.0)
-CRAWL_TIMEOUT = 300    # bail out after 5 min regardless
+POLL_INTERVAL = 3.0    # seconds between browser-use step polls
+CRAWL_TIMEOUT = 240    # bail out after 4 min regardless
 
-_PROMPTS = [
-    (
-        "You are auditing {url} for a sustainability report. Agent 1 of 3. "
-        "Start on the homepage, then follow main navigation links. "
-        "Stay on the same domain ({domain}). "
-        "Do not fill in forms, log in, or click external links."
-    ),
-    (
-        "You are auditing {url} for a sustainability report. Agent 2 of 3. "
-        "Start on the homepage, then focus on product, service, or content section links. "
-        "Stay on the same domain ({domain}). "
-        "Do not fill in forms, log in, or click external links."
-    ),
-    (
-        "You are auditing {url} for a sustainability report. Agent 3 of 3. "
-        "Start on the homepage, then explore about, blog, or resource section links. "
-        "Stay on the same domain ({domain}). "
-        "Do not fill in forms, log in, or click external links."
-    ),
-]
+_PROMPT = (
+    "You are auditing a website for a sustainability report. "
+    "You are starting at {start_url}. Explore this section and follow links to nearby pages. "
+    "Stay on the same domain ({domain}). "
+    "Do not fill in forms, log in, or click external links."
+)
 
 
 async def crawl(
@@ -66,6 +51,13 @@ async def crawl(
     from browser_use_sdk.v2.client import AsyncBrowserUse
     client = AsyncBrowserUse(api_key=api_key)
     domain = urlparse(url).hostname or urlparse(url).netloc
+
+    # Pre-crawl homepage with httpx to get distinct nav links for each agent
+    nav_links = await _get_nav_links(url, domain, NUM_AGENTS - 1)
+    agent_start_urls = [url] + nav_links
+    while len(agent_start_urls) < NUM_AGENTS:
+        agent_start_urls.append(url)
+    logger.info("agent start URLs: %s", agent_start_urls)
 
     # Shared state across agents (protected by asyncio single-thread)
     discovered: list[str] = []
@@ -89,12 +81,13 @@ async def crawl(
 
     # ── Launch all agents concurrently ────────────────────────────────────────
     async def run_agent(agent_idx: int) -> None:
-        prompt = _PROMPTS[agent_idx].format(url=url, domain=domain)
+        start_url = agent_start_urls[agent_idx]
+        prompt = _PROMPT.format(start_url=start_url, domain=domain)
         try:
             task_resp = await client.tasks.create(
                 task=prompt,
-                start_url=url,
-                max_steps=60,
+                start_url=start_url,
+                max_steps=40,
             )
         except Exception as e:
             logger.warning("agent %d failed to start: %s", agent_idx, e)
@@ -113,7 +106,10 @@ async def crawl(
                     on_live_url(lurl)
             return _cb
 
-        asyncio.create_task(_fetch_live_url(client, session_id, _make_live_cb(agent_idx)))
+        # Keep a reference so we can wait for it before stopping the session
+        live_url_task = asyncio.create_task(
+            _fetch_live_url(client, session_id, _make_live_cb(agent_idx))
+        )
 
         seen_steps = 0
         deadline = time.monotonic() + CRAWL_TIMEOUT
@@ -137,6 +133,13 @@ async def crawl(
             if task_view.status.value in ("finished", "stopped", "failed"):
                 break
 
+        # Wait for live_url before stopping — stopping kills the session
+        if not live_url_task.done():
+            try:
+                await asyncio.wait_for(asyncio.shield(live_url_task), timeout=10)
+            except (asyncio.TimeoutError, Exception):
+                live_url_task.cancel()
+
         try:
             await client.tasks.stop(task_id)
         except Exception:
@@ -158,11 +161,40 @@ async def crawl(
     return pages
 
 
+async def _get_nav_links(url: str, domain: str, n: int) -> list[str]:
+    """Quickly fetch the homepage and extract n distinct nav/anchor links for agent seeding."""
+    try:
+        async with httpx.AsyncClient(
+            timeout=10, follow_redirects=True,
+            headers={"User-Agent": "Mozilla/5.0 (GreenAudit/1.0)"},
+        ) as c:
+            resp = await c.get(url)
+            html = resp.text
+        links: list[str] = []
+        seen: set[str] = {url.rstrip("/")}
+        skip_exts = (".pdf", ".jpg", ".jpeg", ".png", ".gif", ".svg", ".zip", ".css", ".js")
+        for m in re.finditer(r'<a[^>]+href=["\']([^"\'>\s#][^"\'>\s]*)["\']', html, re.I):
+            href = _abs(m.group(1), url)
+            normed = href.rstrip("/")
+            host = urlparse(normed).hostname or ""
+            same_site = host == domain or host.endswith("." + domain)
+            if (normed and same_site and normed not in seen
+                    and not any(normed.lower().endswith(e) for e in skip_exts)):
+                seen.add(normed)
+                links.append(normed)
+                if len(links) >= n:
+                    break
+        return links
+    except Exception as e:
+        logger.warning("nav pre-crawl failed: %s", e)
+        return []
+
+
 async def _fetch_live_url(client, session_id: str, on_live_url: Callable[[str], None] | None) -> None:
     """Retry getting live_url for up to 30s without blocking the crawl."""
     if not on_live_url:
         return
-    for delay in (1, 2, 3, 5, 8, 11):
+    for delay in (1, 2, 2, 2, 3):
         await asyncio.sleep(delay)
         try:
             session = await client.sessions.get(session_id)
