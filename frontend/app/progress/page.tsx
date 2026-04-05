@@ -70,12 +70,12 @@ export default function Progress() {
     queued: "Queued...",
     crawling: "Crawling pages...",
     scoring: "Running Lighthouse audits...",
-    generating_fixes: "Generating AI code fixes...",
+    generating_fixes: "Generating code fixes...",
     done: "Complete!",
     error: "Error",
   };
 
-  const activeUrl = liveUrls[0] ?? liveUrl;
+  const activeUrl = liveUrls[0] ?? status.live_url ?? null;
 
   return (
     <div className="flex h-screen bg-[#0a0f0a]">
