@@ -45,7 +45,7 @@ export default function Report() {
         <div className="dot-grid absolute inset-0 pointer-events-none" />
         <div className="relative text-center space-y-4">
           <div className="w-12 h-12 border-2 border-[#7ec87e] border-t-transparent rounded-full animate-spin mx-auto" />
-          <div className="text-[#7ec87e] font-mono text-sm tracking-wider">Loading report…</div>
+          <div className="text-[#7ec87e] font-sans text-sm tracking-wider">Loading report…</div>
         </div>
       </div>
     );
@@ -56,9 +56,9 @@ export default function Report() {
       <div className="relative flex items-center justify-center min-h-screen bg-[#0a0f0a] overflow-hidden">
         <div className="dot-grid absolute inset-0 pointer-events-none" />
         <div className="relative glass-card rounded-2xl p-10 text-center space-y-4 max-w-sm mx-auto">
-          <div className="text-[#c87e7e] font-mono text-sm uppercase tracking-wider">Error</div>
+          <div className="text-[#c87e7e] font-sans text-sm uppercase tracking-wider">Error</div>
           <div className="text-[#808080] text-sm">{error || "No data available"}</div>
-          <a href="/" className="inline-block text-[#7ec87e] font-mono text-xs hover:opacity-80 transition-opacity">← New Audit</a>
+          <a href="/" className="inline-block text-[#7ec87e] font-sans text-xs hover:opacity-80 transition-opacity">← New Audit</a>
         </div>
       </div>
     );

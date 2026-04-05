@@ -30,7 +30,7 @@ export default function SplitPreview({ pageUrl, fixes, baselineCo2 }: Props) {
     <div className="flex flex-col gap-6">
       {/* CO2 counter */}
       <div className="rounded bg-[#0f1a0f] border border-[#1a2a1a] p-6">
-        <p className="text-[#4a6a4a] text-sm mb-3 text-center font-mono">
+        <p className="text-[#4a6a4a] text-sm mb-3 text-center font-sans">
           Live CO₂ estimate — toggle fixes to see impact
         </p>
         <LiveCO2Counter value={currentCo2} baseline={baselineCo2} />
@@ -40,7 +40,7 @@ export default function SplitPreview({ pageUrl, fixes, baselineCo2 }: Props) {
       <div className="grid grid-cols-2 gap-4 h-[520px]">
         {/* Left: original site */}
         <div className="flex flex-col rounded overflow-hidden border border-[#1a2a1a]">
-          <div className="px-4 py-2 bg-[#0f1a0f] border-b border-[#1a2a1a] text-xs text-[#4a6a4a] font-medium font-mono">
+          <div className="px-4 py-2 bg-[#0f1a0f] border-b border-[#1a2a1a] text-xs text-[#4a6a4a] font-medium font-sans">
             Original
           </div>
           <iframe
@@ -53,7 +53,7 @@ export default function SplitPreview({ pageUrl, fixes, baselineCo2 }: Props) {
 
         {/* Right: fix list */}
         <div className="flex flex-col rounded border border-[#1a2a1a] overflow-hidden">
-          <div className="px-4 py-2 bg-[#0f1a0f] border-b border-[#1a2a1a] text-xs text-[#4a6a4a] font-medium font-mono">
+          <div className="px-4 py-2 bg-[#0f1a0f] border-b border-[#1a2a1a] text-xs text-[#4a6a4a] font-medium font-sans">
             Code Fixes — click to apply
           </div>
           <div className="flex-1 overflow-y-auto divide-y divide-[#1a2a1a] bg-[#0a0f0a]">
@@ -61,17 +61,17 @@ export default function SplitPreview({ pageUrl, fixes, baselineCo2 }: Props) {
               <div key={i} className="p-4 space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
-                    <span className="text-xs font-mono text-[#7ec87e] bg-[#0a1f0a] border border-[#1a3a1a] px-2 py-0.5 rounded">
+                    <span className="text-xs font-sans text-[#7ec87e] bg-[#0a1f0a] border border-[#1a3a1a] px-2 py-0.5 rounded">
                       {fix.flag_type}
                     </span>
                     <p className="mt-1.5 text-sm text-[#e8ede8] leading-snug">{fix.description}</p>
-                    <p className="mt-1 text-xs text-[#7ec87e] font-mono">
+                    <p className="mt-1 text-xs text-[#7ec87e] font-sans">
                       Saves ~{fix.estimated_co2_saved.toFixed(4)}g CO₂
                     </p>
                   </div>
                   <button
                     onClick={() => toggle(i)}
-                    className={`shrink-0 text-xs px-3 py-1.5 rounded font-medium font-mono transition-colors ${
+                    className={`shrink-0 text-xs px-3 py-1.5 rounded font-medium font-sans transition-colors ${
                       applied.has(i)
                         ? "bg-[#7ec87e] text-[#0a0f0a]"
                         : "bg-[#0f1a0f] text-[#4a6a4a] border border-[#1a2a1a] hover:bg-[#1a2a1a]"
@@ -88,7 +88,7 @@ export default function SplitPreview({ pageUrl, fixes, baselineCo2 }: Props) {
                       <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
-                        className={`px-3 py-1.5 transition-colors font-mono ${
+                        className={`px-3 py-1.5 transition-colors font-sans ${
                           activeTab === tab
                             ? "text-[#e8ede8] bg-[#0f1a0f]"
                             : "text-[#4a6a4a] hover:text-[#7ec87e]"
@@ -98,7 +98,7 @@ export default function SplitPreview({ pageUrl, fixes, baselineCo2 }: Props) {
                       </button>
                     ))}
                   </div>
-                  <pre className="p-3 text-xs text-[#4a6a4a] overflow-x-auto max-h-32 leading-relaxed font-mono">
+                  <pre className="p-3 text-xs text-[#4a6a4a] overflow-x-auto max-h-32 leading-relaxed font-sans">
                     <code>{activeTab === "code" ? fix.code_snippet : fix.injection_js}</code>
                   </pre>
                 </div>
