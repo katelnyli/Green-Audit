@@ -146,7 +146,7 @@ export default function ReportView({ result }: { result: AuditResult }) {
           <MetricCard
             label={fixes.length > 0 ? "Reducible With Fixes" : "Pages Scanned"}
             value={fixes.length > 0 ? `−${Math.round(savingsPct)}%` : `${pages.length}`}
-            sub={fixes.length > 0 ? `${fixes.length} AI fixes available` : "fully audited"}
+            sub={fixes.length > 0 ? `${fixes.length} fixes available` : "fully audited"}
             accent="#a87ec8"
           />
         </div>
@@ -177,7 +177,7 @@ export default function ReportView({ result }: { result: AuditResult }) {
               style={{ backgroundImage: "radial-gradient(ellipse at 80% 40%, #7ec87e, transparent 65%)" }} />
             <div className="relative">
               <div className="text-xs font-mono uppercase text-[#3a6a3a] mb-5 tracking-wider">
-                With {fixes.length} AI Fixes Applied
+                With {fixes.length} Fixes Applied
               </div>
               <div className="flex items-start gap-5">
                 <div className="relative shrink-0">
@@ -200,7 +200,6 @@ export default function ReportView({ result }: { result: AuditResult }) {
           </div>
         </div>
 
-        {/* ── AI Fixes ────────────────────────────────────────────────── */}
         {fixes.length > 0 && (
           <div>
             <div className="text-xs font-mono uppercase text-[#3a5a3a] mb-4 tracking-wider">
