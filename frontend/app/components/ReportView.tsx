@@ -110,9 +110,9 @@ export default function ReportView({ result }: { result: AuditResult }) {
       {/* ── Sticky top bar ──────────────────────────────────────────── */}
       <div className="sticky top-0 z-10 bg-[#0a0f0a]/90 backdrop-blur border-b border-[#1a2a1a] px-8 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <a href="/" className="text-[#404040] hover:text-[#7ec87e] text-xs font-sans transition-colors">← New audit</a>
+          <a href="/" className="text-[#708870] hover:text-[#7ec87e] text-xs font-sans transition-colors">← New audit</a>
           <span className="text-[#1a2a1a]">|</span>
-          <span className="text-[#606060] font-sans text-xs truncate max-w-sm">{domain}</span>
+          <span className="text-[#8aaa8a] font-sans text-xs truncate max-w-sm">{domain}</span>
         </div>
         <div className="flex items-center gap-3">
           <button onClick={exportPatch} disabled={fixes.length === 0}
@@ -136,7 +136,7 @@ export default function ReportView({ result }: { result: AuditResult }) {
 
           {/* Before */}
           <div className="glass-card rounded-xl p-6">
-            <div className="text-xs font-sans uppercase text-[#404040] mb-5 tracking-wider">Current State</div>
+            <div className="text-xs font-sans uppercase text-[#708870] mb-5 tracking-wider">Current State</div>
             <div className="space-y-2.5">
               <Stat label="Annual CO₂" value={fmtGrams(annualCo2Grams)} color="#c8a87e" />
               <Stat label="Trees to offset" value={`${treesNeeded} trees/yr`} color="#c8a87e" />
@@ -149,7 +149,7 @@ export default function ReportView({ result }: { result: AuditResult }) {
             <div className="absolute inset-0 opacity-[0.04] pointer-events-none"
               style={{ backgroundImage: "radial-gradient(ellipse at 80% 40%, #7ec87e, transparent 65%)" }} />
             <div className="relative">
-              <div className="text-xs font-sans uppercase text-[#404040] mb-5 tracking-wider">
+              <div className="text-xs font-sans uppercase text-[#708870] mb-5 tracking-wider">
                 With {fixes.length} Fixes Applied
               </div>
               <div className="space-y-2.5">
@@ -163,7 +163,7 @@ export default function ReportView({ result }: { result: AuditResult }) {
 
         {fixes.length > 0 && (
           <div>
-            <div className="text-xs font-sans uppercase text-[#404040] mb-4 tracking-wider">
+            <div className="text-xs font-sans uppercase text-[#708870] mb-4 tracking-wider">
               Code Fixes
             </div>
             <div className="space-y-2">
@@ -184,20 +184,20 @@ export default function ReportView({ result }: { result: AuditResult }) {
                       <span className="flex-1" />
                       <span className="text-xs font-sans text-[#5a8a5a] shrink-0 hidden sm:block max-w-[200px] truncate">{pagePath}</span>
                       <span className="text-xs font-sans text-[#7ec87e] shrink-0 ml-4 whitespace-nowrap">saves ~{fmtGrams(fixAnnualGrams)}/yr</span>
-                      <span className="text-[#3a5a3a] text-xs ml-2 shrink-0">{isOpen ? "▲" : "▼"}</span>
+                      <span className="text-[#5a8a5a] text-xs ml-2 shrink-0">{isOpen ? "▲" : "▼"}</span>
                     </button>
                     {isOpen && (
                       <div className="border-t border-[#1a2a1a] px-5 pb-5 pt-4 space-y-4">
                         <div className="flex items-center gap-2 text-xs font-sans">
-                          <span className="text-[#3a5a3a]">Page:</span>
+                          <span className="text-[#5a8a5a]">Page:</span>
                           <span className="text-[#5a8a5a]">{fix.page_url}</span>
                         </div>
                         <p className="text-sm text-[#7a9a7a] leading-relaxed">{fix.description}</p>
                         <div className="rounded-lg bg-[#060d06] border border-[#1a2a1a] overflow-hidden">
                           <div className="flex items-center justify-between px-4 py-2 border-b border-[#1a2a1a]">
-                            <span className="text-xs font-sans text-[#3a5a3a]">code fix</span>
+                            <span className="text-xs font-sans text-[#5a8a5a]">code fix</span>
                             <button onClick={() => navigator.clipboard?.writeText(fix.code_snippet)}
-                              className="text-xs font-sans text-[#3a5a3a] hover:text-[#7ec87e] transition-colors">
+                              className="text-xs font-sans text-[#5a8a5a] hover:text-[#7ec87e] transition-colors">
                               copy
                             </button>
                           </div>
@@ -215,7 +215,7 @@ export default function ReportView({ result }: { result: AuditResult }) {
         {/* ── Page breakdown ───────────────────────────────────────────── */}
         {pages.length > 0 && (
           <div>
-            <div className="text-xs font-sans uppercase text-[#404040] mb-4 tracking-wider">CO₂ Per Page</div>
+            <div className="text-xs font-sans uppercase text-[#708870] mb-4 tracking-wider">CO₂ Per Page</div>
             <div className="glass-card rounded-xl overflow-hidden">
               {pages.slice().sort((a, b) => b.estimated_co2_grams - a.estimated_co2_grams).map((page, i, arr) => {
                 const maxCo2 = Math.max(...arr.map(p => p.estimated_co2_grams), 0.0001);
@@ -232,7 +232,7 @@ export default function ReportView({ result }: { result: AuditResult }) {
                       <div className="h-full rounded-full" style={{ width: `${Math.max(2, pct)}%`, backgroundColor: barColor }} />
                     </div>
                     <div className="w-16 text-right font-sans text-xs shrink-0" style={{ color: barColor }}>{co2Str}</div>
-                    <div className="w-16 text-right font-sans text-xs text-[#3a5a3a] shrink-0">{fmt(page.transfer_size_bytes)}</div>
+                    <div className="w-16 text-right font-sans text-xs text-[#5a8a5a] shrink-0">{fmt(page.transfer_size_bytes)}</div>
                   </div>
                 );
               })}
@@ -251,9 +251,9 @@ export default function ReportView({ result }: { result: AuditResult }) {
 function MetricCard({ label, value, sub, accent }: { label: string; value: string; sub: string; accent: string }) {
   return (
     <div className="stat-card glass-card rounded-xl p-5">
-      <div className="text-xs font-sans uppercase text-[#404040] mb-2 tracking-wider">{label}</div>
+      <div className="text-xs font-sans uppercase text-[#708870] mb-2 tracking-wider">{label}</div>
       <div className="text-3xl font-sans font-bold mb-1 leading-none" style={{ color: accent }}>{value}</div>
-      <div className="text-xs text-[#404040] font-sans mt-1">{sub}</div>
+      <div className="text-xs text-[#708870] font-sans mt-1">{sub}</div>
     </div>
   );
 }
@@ -261,7 +261,7 @@ function MetricCard({ label, value, sub, accent }: { label: string; value: strin
 function Stat({ label, value, color }: { label: string; value: string; color: string }) {
   return (
     <div className="flex items-center justify-between">
-      <span className="text-xs font-sans text-[#3a5a3a]">{label}</span>
+      <span className="text-xs font-sans text-[#5a8a5a]">{label}</span>
       <span className="text-sm font-sans font-semibold" style={{ color }}>{value}</span>
     </div>
   );
@@ -270,7 +270,7 @@ function Stat({ label, value, color }: { label: string; value: string; color: st
 function StatDiff({ label, before, after, saved }: { label: string; before: string; after: string; saved: string }) {
   return (
     <div className="flex items-center justify-between">
-      <span className="text-xs font-sans text-[#3a5a3a]">{label}</span>
+      <span className="text-xs font-sans text-[#5a8a5a]">{label}</span>
       <div className="flex items-center gap-2 text-xs font-sans">
         <span className="text-[#5a3a3a] line-through">{before}</span>
         <span className="text-[#7ec87e] font-semibold">{after}</span>
