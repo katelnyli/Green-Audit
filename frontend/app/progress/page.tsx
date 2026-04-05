@@ -5,6 +5,18 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { streamAudit } from "@/app/lib/api";
 import type { AuditStatus } from "@/app/types/audit";
 
+const PHASES = [
+  { key: "crawling",         label: "Crawling" },
+  { key: "scoring",          label: "Scoring" },
+  { key: "generating_fixes", label: "Generating fixes" },
+  { key: "done",             label: "Complete" },
+];
+
+function phaseIndex(status: string) {
+  const i = PHASES.findIndex((p) => p.key === status);
+  return i === -1 ? (status === "queued" ? -1 : PHASES.length) : i;
+}
+
 export default function Progress() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -18,14 +30,10 @@ export default function Progress() {
 
   useEffect(() => {
     if (!auditId) { setError("No audit ID provided"); return; }
-
     const cleanup = streamAudit(
       auditId,
       (data) => setStatus(data),
-      (data) => {
-        setStatus(data);
-        setTimeout(() => router.push(`/report?audit_id=${auditId}`), 800);
-      },
+      (data) => { setStatus(data); setTimeout(() => router.push(`/report?audit_id=${auditId}`), 800); },
       (err) => setError(err),
     );
     return cleanup;
@@ -36,215 +44,218 @@ export default function Progress() {
   }, [status?.pages_discovered?.length]);
 
   const handleTerminate = async () => {
-    if (!auditId || !window.confirm("Are you sure you want to stop this audit?")) return;
+    if (!auditId || !window.confirm("Stop this audit?")) return;
     setIsTerminating(true);
     try {
       const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-      const response = await fetch(`${BASE}/audit/${auditId}/terminate`, { method: "POST" });
-      if (response.ok) {
-        setTimeout(() => router.push(`/report?audit_id=${auditId}`), 300);
-      }
+      const res = await fetch(`${BASE}/audit/${auditId}/terminate`, { method: "POST" });
+      if (res.ok) setTimeout(() => router.push(`/report?audit_id=${auditId}`), 300);
     } catch {
       setIsTerminating(false);
     }
   };
 
-  const LoadingScreen = ({ message }: { message: string }) => (
-    <div className="relative flex items-center justify-center min-h-screen bg-[#0a0f0a] overflow-hidden">
-      <div className="dot-grid absolute inset-0 pointer-events-none" />
-      <div className="relative text-center space-y-4">
-        <div className="w-12 h-12 border-2 border-[#7ec87e] border-t-transparent rounded-full animate-spin mx-auto" />
-        <div className="text-[#7ec87e] font-mono text-sm tracking-wider">{message}</div>
-      </div>
-    </div>
-  );
-
   if (error) {
     return (
-      <div className="relative flex items-center justify-center min-h-screen bg-[#0a0f0a] overflow-hidden">
-        <div className="dot-grid absolute inset-0 pointer-events-none" />
-        <div className="relative glass-card rounded-2xl p-10 text-center space-y-4 max-w-sm mx-auto">
-          <div className="text-[#c87e7e] font-mono text-sm uppercase tracking-wider">Error</div>
-          <div className="text-[#808080] text-sm">{error}</div>
-          <a href="/" className="inline-block text-[#7ec87e] font-mono text-xs hover:opacity-80 transition-opacity">← New Audit</a>
+      <div className="flex items-center justify-center min-h-screen bg-[#080d08]">
+        <div className="text-center space-y-3">
+          <p className="text-[#c87e7e] text-sm">{error}</p>
+          <a href="/" className="text-[#3a5a3a] hover:text-[#6a9a6a] text-xs transition-colors">← New Audit</a>
         </div>
       </div>
     );
   }
 
-  if (!status) return <LoadingScreen message="Connecting…" />;
+  if (!status) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-[#080d08]">
+        <div className="w-5 h-5 border border-[#3a5a3a] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
-  const domain = (() => {
-    try { return new URL(status.current_url ?? "").hostname; } catch { return "…"; }
-  })();
-
+  const domain = (() => { try { return new URL(status.current_url ?? "").hostname; } catch { return "…"; } })();
   const pagesDiscovered = status.pages_discovered ?? [];
   const liveUrls = status.live_urls ?? [];
-
-  const phaseLabel: Record<string, string> = {
-    queued:           "Queued…",
-    crawling:         "Crawling pages…",
-    scoring:          "Running Lighthouse audits…",
-    generating_fixes: "Generating code fixes…",
-    done:             "Complete!",
-    error:            "Error",
-  };
-
   const activeUrl = liveUrls[0] ?? status.live_url ?? null;
+  const curPhaseIdx = phaseIndex(status.status);
 
   return (
-    <div className="relative flex h-screen bg-[#0a0f0a] overflow-hidden">
-      {/* Dot grid */}
-      <div className="dot-grid absolute inset-0 pointer-events-none opacity-50" />
+    <div className="flex flex-col h-screen bg-[#080d08] overflow-hidden">
 
-      {/* ── LEFT: Status feed ─────────────────────────────────────────── */}
-      <div className="relative z-10 w-[38%] border-r border-[#1a2a1a] flex flex-col shrink-0">
-
-        {/* Header */}
-        <div className="px-5 py-4 border-b border-[#1a2a1a] shrink-0 bg-[#0a0f0a]/80 backdrop-blur">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex gap-3 items-center shrink-0">
-              <a href="/" className="text-[#404040] hover:text-[#7ec87e] text-xs font-mono transition-colors">← New Audit</a>
-              {status.status !== "done" && status.status !== "error" && (
-                <button
-                  onClick={handleTerminate}
-                  disabled={isTerminating}
-                  className="px-2.5 py-1 text-xs bg-[#2a0f0f] hover:bg-[#3a1414] text-[#c87e7e] border border-[#4a1a1a] rounded font-mono transition-colors disabled:opacity-50"
-                >
-                  {isTerminating ? "Stopping…" : "Stop"}
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="font-mono text-sm text-[#ededed] truncate mb-1">
-            {status.status === "done" ? "Audit complete" : `Scanning ${domain}`}
-          </div>
-          <div className="flex items-center gap-2">
-            <div className={`w-1.5 h-1.5 rounded-full ${status.status === "done" ? "bg-[#7ec87e]" : "bg-[#7ec87e] animate-pulse"}`} />
-            <span className="text-[#7ec87e] font-mono text-xs">
-              {phaseLabel[status.status] ?? status.status}
-            </span>
-          </div>
+      {/* ── Top bar ─────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between px-6 py-3 border-b border-[#141f14] shrink-0">
+        <div className="flex items-center gap-4">
+          <a href="/" className="text-[#2e472e] hover:text-[#5a7a5a] text-xs transition-colors">← New Audit</a>
+          <span className="text-[#1a2a1a] text-xs">|</span>
+          <span className="text-[#4a6a4a] text-xs truncate max-w-xs">{domain}</span>
         </div>
-
-        {/* Feed */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4 font-mono text-xs">
-
-          {status.agent_status && status.status === "crawling" && (
-            <div className="glass-card rounded-lg p-3">
-              <div className="flex items-center gap-2 mb-1.5">
-                <div className="w-1.5 h-1.5 rounded-full bg-[#7ec87e] animate-pulse" />
-                <span className="text-[#7ec87e] text-xs uppercase tracking-wider">Agent</span>
-              </div>
-              <div className="text-[#c0c0c0] leading-snug">{status.agent_status}</div>
-            </div>
-          )}
-
-          {status.current_url && status.status !== "crawling" && (
-            <div>
-              <div className="text-[#404040] mb-1 uppercase tracking-wider">Current URL</div>
-              <div className="text-[#808080] break-all">{status.current_url}</div>
-            </div>
-          )}
-
-          {pagesDiscovered.length > 0 && (
-            <div>
-              <div className="text-[#404040] mb-2 uppercase tracking-wider">
-                Pages Discovered ({pagesDiscovered.length})
-              </div>
-              <div className="space-y-1.5">
-                {pagesDiscovered.map((url, i) => (
-                  <div key={url} className="flex items-center gap-2 text-[#606060]">
-                    <span className="text-[#7ec87e] w-4 text-right shrink-0">{i + 1}</span>
-                    <span className="truncate flex-1">{url}</span>
-                    <span className="text-[#7ec87e] shrink-0">✓</span>
-                  </div>
-                ))}
-                <div ref={pagesEndRef} />
-              </div>
-            </div>
-          )}
-
-          {status.result && status.result.pages.length > 0 && (
-            <div>
-              <div className="text-[#404040] mb-2 uppercase tracking-wider">Pages Scanned</div>
-              <div className="space-y-1.5">
-                {status.result.pages.map((page, i) => (
-                  <div key={i} className="flex items-center gap-2 text-[#606060]">
-                    <div className="w-1.5 h-1.5 rounded-full bg-[#7ec87e] shrink-0" />
-                    <span className="flex-1 truncate">{page.url}</span>
-                    <span className="text-[#404040]">
-                      {(page.transfer_size_bytes / 1024 / 1024).toFixed(2)}MB
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        {status.status !== "done" && status.status !== "error" && (
+          <button
+            onClick={handleTerminate}
+            disabled={isTerminating}
+            className="text-xs text-[#2e472e] hover:text-[#c87e7e] transition-colors disabled:opacity-40"
+          >
+            {isTerminating ? "Stopping…" : "Stop"}
+          </button>
+        )}
       </div>
 
-      {/* ── RIGHT: Live agent view ─────────────────────────────────────── */}
-      <div className="relative z-10 flex-1 flex flex-col min-w-0">
-
-        {/* Header bar */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#1a2a1a] shrink-0 bg-[#0a0f0a]/80 backdrop-blur">
-          <div className="flex items-center gap-2">
-            <div className={`w-1.5 h-1.5 rounded-full ${activeUrl ? "bg-[#7ec87e] animate-pulse" : "bg-[#252525]"}`} />
-            <span className="text-xs font-mono text-[#404040] uppercase tracking-wider">Live Browser</span>
-          </div>
-          {activeUrl && (
-            <a href={activeUrl} target="_blank" rel="noopener noreferrer"
-              className="text-xs font-mono text-[#404040] hover:text-[#7ec87e] transition-colors">
-              Open in new tab ↗
-            </a>
-          )}
-        </div>
-
-        {/* URL bar */}
-        <div className="px-4 py-2 border-b border-[#1a2a1a] shrink-0 bg-[#0a0f0a]/60">
-          <div className="bg-[#070c07] border border-[#1a2a1a] rounded-lg px-3 py-1.5 font-mono text-xs text-[#505050] truncate">
-            {activeUrl || (status.status === "crawling" ? "Waiting for agent…" : "No preview available")}
-          </div>
-        </div>
-
-        {/* Iframe panel */}
+      {/* ── Live agent view — full width, tall ──────────────────────── */}
+      <div className="shrink-0" style={{ height: "72vh" }}>
         {activeUrl && !iframeBlocked ? (
           <iframe
             src={activeUrl}
-            className="flex-1 w-full"
+            className="w-full h-full"
             title="Live browser"
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
             onError={() => setIframeBlocked(true)}
           />
         ) : activeUrl && iframeBlocked ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-4 bg-[#0a0f0a]">
-            <div className="text-[#505050] text-sm font-mono">Preview blocked by site security policy.</div>
+          <div className="w-full h-full flex flex-col items-center justify-center gap-3">
+            <p className="text-[#2e472e] text-xs">Preview blocked by site policy.</p>
             <a href={activeUrl} target="_blank" rel="noopener noreferrer"
-              className="px-5 py-2.5 shimmer-btn text-[#0a0f0a] text-sm font-bold rounded-xl shadow-[0_4px_24px_rgba(126,200,126,0.25)]">
-              Watch live in new tab ↗
+              className="text-xs text-[#5a8a5a] hover:text-[#7aac7a] transition-colors">
+              Open in new tab ↗
             </a>
           </div>
         ) : (
-          <div className="flex-1 flex items-center justify-center bg-[#0a0f0a] relative">
-            <div className="dot-grid absolute inset-0 opacity-30 pointer-events-none" />
-            <div className="relative text-center space-y-3">
-              {status.status === "done" ? (
-                <>
-                  <div className="w-14 h-14 border-2 border-[#7ec87e] rounded-full flex items-center justify-center mx-auto">
-                    <div className="text-[#7ec87e] text-xl">✓</div>
-                  </div>
-                  <div className="text-[#7ec87e] font-mono text-sm">audit complete</div>
-                </>
-              ) : (
-                <>
-                  <div className="w-12 h-12 border-2 border-[#7ec87e] border-t-transparent rounded-full animate-spin mx-auto" />
-                  <div className="text-[#505050] font-mono text-sm">Waiting for live preview…</div>
-                </>
-              )}
-            </div>
+          <div className="w-full h-full flex items-center justify-center">
+            {status.status === "done" ? (
+              <p className="text-[#2e472e] text-xs">Audit complete</p>
+            ) : (
+              <div className="flex items-center gap-3">
+                <div className="w-4 h-4 border border-[#2e472e] border-t-transparent rounded-full animate-spin" />
+                <span className="text-[#2e472e] text-xs">Waiting for preview…</span>
+              </div>
+            )}
           </div>
         )}
+      </div>
+
+      {/* ── 3-column status panel ────────────────────────────────────── */}
+      <div className="flex-1 border-t border-[#141f14] grid grid-cols-3 divide-x divide-[#141f14] overflow-hidden">
+
+        {/* Col 1 — Pages discovered */}
+        <div className="overflow-y-auto px-5 py-4">
+          <div className="text-[#2e472e] text-xs uppercase tracking-widest mb-3">
+            Pages discovered
+            {pagesDiscovered.length > 0 && (
+              <span className="ml-2 text-[#3a5a3a]">({pagesDiscovered.length})</span>
+            )}
+          </div>
+          {pagesDiscovered.length === 0 ? (
+            <p className="text-[#1e2e1e] text-xs">None yet</p>
+          ) : (
+            <div className="space-y-1.5">
+              {pagesDiscovered.map((u, i) => (
+                <div key={u} className="flex items-start gap-2 text-xs text-[#3a5a3a]">
+                  <span className="text-[#1e2e1e] shrink-0 w-4 text-right">{i + 1}</span>
+                  <span className="break-all leading-snug">{u}</span>
+                </div>
+              ))}
+              <div ref={pagesEndRef} />
+            </div>
+          )}
+        </div>
+
+        {/* Col 2 — Progress (highlighted) */}
+        <div className="overflow-y-auto px-5 py-4 bg-[#0a110a]">
+          <div className="text-[#4a7a4a] text-xs uppercase tracking-widest mb-4">Progress</div>
+          <div className="space-y-3">
+            {PHASES.map((phase, i) => {
+              const done    = i < curPhaseIdx;
+              const active  = i === curPhaseIdx;
+              const pending = i > curPhaseIdx;
+              return (
+                <div key={phase.key} className="flex items-center gap-3">
+                  {/* indicator */}
+                  <div className="shrink-0 w-5 flex items-center justify-center">
+                    {done ? (
+                      <span className="text-[#3a5a3a] text-xs">✓</span>
+                    ) : active ? (
+                      <div className="w-3 h-3 border border-[#5a9a5a] border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <div className="w-1.5 h-1.5 rounded-full bg-[#1a2a1a]" />
+                    )}
+                  </div>
+                  <span className={`text-xs ${
+                    done    ? "text-[#3a5a3a]" :
+                    active  ? "text-[#8aba8a] font-medium" :
+                              "text-[#1e2e1e]"
+                  }`}>
+                    {phase.label}
+                  </span>
+                  {active && status.progress !== undefined && status.total !== undefined && status.total > 0 && (
+                    <span className="ml-auto text-[#3a5a3a] text-xs">
+                      {status.progress}/{status.total}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Progress bar if in a countable phase */}
+          {status.total !== undefined && status.total > 0 && status.progress !== undefined && (
+            <div className="mt-5">
+              <div className="h-px bg-[#141f14] rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-[#3a5a3a] transition-all duration-500"
+                  style={{ width: `${Math.round((status.progress / status.total) * 100)}%` }}
+                />
+              </div>
+              <div className="text-[#2e472e] text-xs mt-1.5">
+                {Math.round((status.progress / status.total) * 100)}%
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Col 3 — Activity */}
+        <div className="overflow-y-auto px-5 py-4">
+          <div className="text-[#2e472e] text-xs uppercase tracking-widest mb-3">Activity</div>
+          <div className="space-y-4 text-xs">
+
+            {/* Agent action */}
+            {status.agent_status && (
+              <div>
+                <div className="text-[#1e2e1e] uppercase tracking-widest mb-1.5">Agent</div>
+                <p className="text-[#3a5a3a] leading-relaxed">{status.agent_status}</p>
+              </div>
+            )}
+
+            {/* Current URL */}
+            {status.current_url && (
+              <div>
+                <div className="text-[#1e2e1e] uppercase tracking-widest mb-1.5">Current</div>
+                <p className="text-[#3a5a3a] break-all leading-snug">{status.current_url}</p>
+              </div>
+            )}
+
+            {/* Pages scanned summary */}
+            {status.result && status.result.pages.length > 0 && (
+              <div>
+                <div className="text-[#1e2e1e] uppercase tracking-widest mb-1.5">
+                  Scanned ({status.result.pages.length})
+                </div>
+                <div className="space-y-1">
+                  {status.result.pages.map((page, i) => (
+                    <div key={i} className="flex justify-between gap-3 text-[#2e472e]">
+                      <span className="truncate flex-1">{(() => { try { return new URL(page.url).pathname || "/"; } catch { return page.url; } })()}</span>
+                      <span className="shrink-0">{(page.transfer_size_bytes / 1024 / 1024).toFixed(1)}MB</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!status.agent_status && !status.current_url && !status.result && (
+              <p className="text-[#1e2e1e]">Waiting…</p>
+            )}
+          </div>
+        </div>
+
       </div>
     </div>
   );
