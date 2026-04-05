@@ -6,6 +6,7 @@ import type { AuditResult } from "@/app/types/audit";
 // ── Projection constants ──────────────────────────────────────────────────────
 const MONTHLY_VISITORS = 100_000;
 const ANNUAL_LOADS = MONTHLY_VISITORS * 12; // 1.2 M page loads/year
+const TREE_GRAMS = 22_000;      // grams CO₂ absorbed per tree per year
 const CAR_GRAMS_PER_KM = 120;   // grams CO₂ per km driven (avg car)
 
 const FLAG_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -70,12 +71,14 @@ export default function ReportView({ result }: { result: AuditResult }) {
 
   // Annual projections — based on total site CO2 so savings (also summed across all pages) stay consistent
   const annualCo2Grams = Math.max(1, summary.total_estimated_co2_grams * ANNUAL_LOADS);
-  const drivingKm = Math.max(1, Math.round(annualCo2Grams / CAR_GRAMS_PER_KM));
+  const treesNeeded    = Math.max(1, Math.ceil(annualCo2Grams / TREE_GRAMS));
+  const drivingKm      = Math.max(1, Math.round(annualCo2Grams / CAR_GRAMS_PER_KM));
 
   const sortedFixes      = [...fixes].map((fix, i) => ({ fix, i })).sort((a, b) => b.fix.estimated_co2_saved - a.fix.estimated_co2_saved);
   const totalSavingsG    = fixes.reduce((s, f) => s + f.estimated_co2_saved, 0);
   const annualSavingsG   = totalSavingsG * ANNUAL_LOADS;
   const afterCo2Grams    = Math.max(1, annualCo2Grams - annualSavingsG);
+  const afterTreesNeeded = Math.max(1, Math.ceil(afterCo2Grams / TREE_GRAMS));
   const savingsPct       = safePct(annualSavingsG, annualCo2Grams);
 
   const domain = (() => { try { return new URL(result.target_url).hostname; } catch { return result.target_url; } })();
@@ -122,8 +125,9 @@ export default function ReportView({ result }: { result: AuditResult }) {
       <div className="relative z-10 max-w-6xl mx-auto px-8 py-8 space-y-8">
 
         {/* ── Hero cards ──────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <MetricCard label="Annual CO₂" value={fmtGrams(annualCo2Grams)} sub="" accent="#7ec87e" />
+          <MetricCard label="Trees to Offset" value={`${treesNeeded}`} sub="new trees needed per year" accent="#7ec87e" />
           <MetricCard label="Car Equivalent" value={fmtKm(drivingKm)} sub="of driving per year" accent="#c8a87e" />
         </div>
 
@@ -135,6 +139,7 @@ export default function ReportView({ result }: { result: AuditResult }) {
             <div className="text-xs font-sans uppercase text-[#404040] mb-5 tracking-wider">Current State</div>
             <div className="space-y-2.5">
               <Stat label="Annual CO₂" value={fmtGrams(annualCo2Grams)} color="#c8a87e" />
+              <Stat label="Trees to offset" value={`${treesNeeded} trees/yr`} color="#c8a87e" />
               <Stat label="Total transfer" value={fmt(summary.total_transfer_bytes)} color="#7ec87e" />
             </div>
           </div>
@@ -149,6 +154,7 @@ export default function ReportView({ result }: { result: AuditResult }) {
               </div>
               <div className="space-y-2.5">
                 <StatDiff label="Annual CO₂" before={fmtGrams(annualCo2Grams)} after={fmtGrams(afterCo2Grams)} saved={`−${Math.round(savingsPct)}%`} />
+                <StatDiff label="Trees needed" before={`${treesNeeded}`} after={`${afterTreesNeeded}`} saved={treesNeeded > afterTreesNeeded ? `−${treesNeeded - afterTreesNeeded}` : "same"} />
                 <Stat label="CO₂ saved/year" value={fmtGrams(annualSavingsG)} color="#7ec87e" />
               </div>
             </div>
