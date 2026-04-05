@@ -38,22 +38,6 @@ export default function Progress() {
     pagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [status?.pages_discovered?.length]);
 
-  // Auto-switch tab to whichever agent last reported status
-  useEffect(() => {
-    if (!status?.agent_status) return;
-    const m = status.agent_status.match(/^\[Agent (\d+)\]/);
-    if (m) {
-      const idx = parseInt(m[1], 10) - 1;
-      if (idx >= 0 && idx <= 2) setActiveAgent(idx);
-    }
-  }, [status?.agent_status]);
-
-  // Auto-switch to first agent that gets a live_url
-  useEffect(() => {
-    if (!status?.live_urls) return;
-    const firstLive = status.live_urls.findIndex((u) => !!u);
-    if (firstLive !== -1) setActiveAgent(firstLive);
-  }, [status?.live_urls?.length]);
 
   if (error) {
     return (
