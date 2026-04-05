@@ -61,11 +61,11 @@ export default function Home() {
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://yourwebsite.com"
             required
-            className="w-full px-4 py-3 bg-[#0b1410]/80 border border-[#1e3428] rounded-lg text-[#d8eedd] text-sm placeholder:text-[#3a6048] focus:outline-none focus:border-[#2e5040] transition-colors backdrop-blur-sm"
+            className="w-full px-4 py-3 bg-[#0b1410]/80 border border-[#1e3428] rounded-lg text-[#f0faf2] text-sm placeholder:text-[#4a7860] focus:outline-none focus:border-[#2e5040] transition-colors backdrop-blur-sm"
           />
 
           <div className="space-y-2">
-            <div className="text-xs text-[#4a7860] tracking-widest uppercase">
+            <div className="text-xs text-[#7aaa90] tracking-widest uppercase">
               Pages to crawl
             </div>
             <div className="flex gap-2">
@@ -76,8 +76,8 @@ export default function Home() {
                   onClick={() => setMaxPages(n)}
                   className={`flex-1 py-2 rounded-lg text-sm border transition-all duration-150 ${
                     maxPages === n
-                      ? "bg-[#1a3828] text-[#96c8a0] border-[#2a5040]"
-                      : "bg-transparent text-[#4a7060] border-[#182820] hover:border-[#2a4838] hover:text-[#6a9880]"
+                      ? "bg-[#1a3828] text-[#b8e8c0] border-[#2a5040]"
+                      : "bg-transparent text-[#6a9880] border-[#182820] hover:border-[#2a4838] hover:text-[#9acc9a]"
                   }`}
                 >
                   {n}
@@ -91,11 +91,11 @@ export default function Home() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 bg-[#152820]/80 hover:bg-[#1c3830]/80 border border-[#254838] text-[#88c09a] text-sm font-medium rounded-lg transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed backdrop-blur-sm"
+            className="w-full py-3 bg-[#152820]/80 hover:bg-[#1c3830]/80 border border-[#254838] text-[#aadabb] text-sm font-medium rounded-lg transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed backdrop-blur-sm"
           >
             {loading ? (
               <span className="flex items-center justify-center gap-2">
-                <span className="w-3.5 h-3.5 border border-[#88c09a] border-t-transparent rounded-full animate-spin" />
+                <span className="w-3.5 h-3.5 border border-[#aadabb] border-t-transparent rounded-full animate-spin" />
                 Starting…
               </span>
             ) : (
