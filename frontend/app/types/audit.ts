@@ -94,6 +94,7 @@ export interface AuditResult {
   pages: Page[];
   summary: Summary;
   fixes: CodeFix[];
+  live_url: string | null;
 }
 
 export interface AuditStatus {

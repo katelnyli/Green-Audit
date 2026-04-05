@@ -44,6 +44,11 @@ export default function ReportView({ result }: { result: AuditResult }) {
     ? Math.round(pages.reduce((sum, p) => sum + p.lighthouse.performance, 0) / pages.length)
     : 0;
 
+  // Calculate "after" stats
+  const afterCO2 = summary.total_estimated_co2_grams - selectedSavings;
+  const afterTransfer = Math.round(summary.total_transfer_bytes * (1 - selectedSavings / summary.total_estimated_co2_grams));
+  const afterPerformance = Math.min(100, avgPerformance + Math.round((selectedSavings / summary.total_estimated_co2_grams) * 30));
+
   const toggleFix = (idx: number) => {
     setSelectedFixes((prev) => {
       const next = new Set(prev);
@@ -230,7 +235,7 @@ export default function ReportView({ result }: { result: AuditResult }) {
         </div>
       </div>
 
-      {/* CENTER COLUMN - Full website comparison */}
+      {/* CENTER COLUMN - Stats comparison */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header with Before/After toggle */}
         <div className="p-4 border-b border-[#1a2a1a] flex items-center justify-between">
@@ -259,25 +264,114 @@ export default function ReportView({ result }: { result: AuditResult }) {
           <div className="text-xs font-mono text-[#4a6a4a]">{result.target_url}</div>
         </div>
 
-        {/* Full height website preview */}
-        <div className="flex-1 flex flex-col bg-[#0f1a0f] p-4">
-          {previewMode === "after" && (
-            <div className="bg-[#7ec87e] text-[#0a0f0a] px-4 py-2 text-xs font-mono rounded mb-2 flex items-center justify-between">
-              <span>Preview with {selectedFixes.size} fixes applied — saves {selectedSavings.toFixed(1)}g CO₂</span>
+        {/* Stats comparison view */}
+        <div className="flex-1 flex items-center justify-center bg-[#0f1a0f] p-8">
+          <div className="max-w-2xl w-full space-y-8">
+            {/* Header */}
+            <div className="text-center">
+              <h2 className="text-2xl font-mono font-bold text-[#7ec87e] mb-2">
+                {previewMode === "before" ? "Current Impact" : "Projected Impact"}
+              </h2>
+              <p className="text-sm text-[#4a6a4a] font-mono">
+                {previewMode === "after" && `With ${selectedFixes.size} fixes applied`}
+              </p>
             </div>
-          )}
-          <div className="flex-1 bg-white border border-[#1a2a1a] rounded overflow-hidden">
-            <iframe
-              src={result.target_url}
-              className="w-full h-full"
-              sandbox="allow-scripts allow-same-origin allow-forms"
-              title={previewMode === "before" ? "Original site" : "Preview with fixes"}
-            />
+
+            {/* Stats grid */}
+            <div className="grid grid-cols-3 gap-6">
+              {/* CO2 Emissions */}
+              <div className="bg-[#0a0f0a] border border-[#1a2a1a] rounded-lg p-6 text-center">
+                <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-3">CO₂ Emissions</div>
+                <div className="text-4xl font-mono font-bold text-[#7ec87e] mb-2">
+                  {previewMode === "before"
+                    ? summary.total_estimated_co2_grams.toFixed(1)
+                    : afterCO2.toFixed(1)}g
+                </div>
+                {previewMode === "after" && selectedSavings > 0 && (
+                  <div className="text-xs font-mono text-[#7ec87e]">
+                    ↓ {((selectedSavings / summary.total_estimated_co2_grams) * 100).toFixed(0)}% reduction
+                  </div>
+                )}
+              </div>
+
+              {/* Performance Score */}
+              <div className="bg-[#0a0f0a] border border-[#1a2a1a] rounded-lg p-6 text-center">
+                <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-3">Performance</div>
+                <div className="text-4xl font-mono font-bold text-[#7ec87e] mb-2">
+                  {previewMode === "before" ? avgPerformance : afterPerformance}
+                  <span className="text-xl text-[#4a6a4a]">/100</span>
+                </div>
+                {previewMode === "after" && afterPerformance > avgPerformance && (
+                  <div className="text-xs font-mono text-[#7ec87e]">
+                    ↑ +{afterPerformance - avgPerformance} points
+                  </div>
+                )}
+              </div>
+
+              {/* Transfer Size */}
+              <div className="bg-[#0a0f0a] border border-[#1a2a1a] rounded-lg p-6 text-center">
+                <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-3">Transfer Size</div>
+                <div className="text-4xl font-mono font-bold text-[#7ec87e] mb-2">
+                  {previewMode === "before"
+                    ? fmt(summary.total_transfer_bytes)
+                    : fmt(afterTransfer)}
+                </div>
+                {previewMode === "after" && afterTransfer < summary.total_transfer_bytes && (
+                  <div className="text-xs font-mono text-[#7ec87e]">
+                    ↓ {fmt(summary.total_transfer_bytes - afterTransfer)} saved
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Visual comparison */}
+            {previewMode === "after" && selectedSavings > 0 && (
+              <div className="bg-[#0a0f0a] border border-[#1a2a1a] rounded-lg p-6">
+                <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-4">Impact Reduction</div>
+                <div className="space-y-3">
+                  <div>
+                    <div className="flex justify-between text-xs font-mono mb-2">
+                      <span className="text-[#4a6a4a]">Before</span>
+                      <span className="text-[#c87e7e]">{summary.total_estimated_co2_grams.toFixed(1)}g</span>
+                    </div>
+                    <div className="h-3 bg-[#0f1a0f] rounded-full overflow-hidden">
+                      <div className="h-full bg-[#c87e7e]" style={{ width: "100%" }} />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-xs font-mono mb-2">
+                      <span className="text-[#4a6a4a]">After</span>
+                      <span className="text-[#7ec87e]">{afterCO2.toFixed(1)}g</span>
+                    </div>
+                    <div className="h-3 bg-[#0f1a0f] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[#7ec87e]"
+                        style={{ width: `${(afterCO2 / summary.total_estimated_co2_grams) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Call to action */}
+            <div className="text-center">
+              <p className="text-sm text-[#4a6a4a] font-mono mb-4">
+                {previewMode === "before"
+                  ? "Select fixes in the left panel to see projected improvements"
+                  : "Export the patch file to implement these optimizations"}
+              </p>
+              {previewMode === "after" && (
+                <button
+                  onClick={exportPatch}
+                  disabled={selectedFixes.size === 0}
+                  className="px-6 py-3 bg-[#7ec87e] text-[#0a0f0a] font-mono text-sm font-semibold rounded hover:bg-[#6db86d] transition-colors disabled:opacity-40"
+                >
+                  Export patch ({selectedFixes.size} fixes)
+                </button>
+              )}
+            </div>
           </div>
-          <div className="text-xs font-mono text-[#2a4a2a] mt-2 text-center">
-            Some sites block iframe embedding. If preview is blank, use Export Patch to apply fixes directly.
-          </div>
-          {/* TODO: Implement real injection when "after" mode - currently shows original */}
         </div>
       </div>
 

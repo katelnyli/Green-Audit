@@ -89,6 +89,7 @@ class AuditResult(BaseModel):
     pages: list[Page]
     summary: Summary
     fixes: list[CodeFix] = []
+    live_url: str | None = None  # browser-use live preview URL
 
 
 class AuditRequest(BaseModel):
