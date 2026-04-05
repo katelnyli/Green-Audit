@@ -42,7 +42,6 @@ function humanFlag(f: string) {
 }
 
 function fmtGrams(grams: number): string {
-  if (grams >= 1_000_000) return `${(grams / 1_000_000).toFixed(1)}t`;
   if (grams >= 1_000) return `${(grams / 1_000).toFixed(1)} kg`;
   if (grams >= 1) return `${Math.round(grams)}g`;
   return `${grams.toFixed(2)}g`;

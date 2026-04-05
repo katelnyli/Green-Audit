@@ -104,7 +104,7 @@ export default function ProgressStream({ auditId }: { auditId: string }) {
         <div className="flex items-center justify-between px-6 py-3 border-b border-zinc-800 shrink-0">
           <div className="flex items-center gap-3">
             <span className="text-zinc-600 text-sm">—</span>
-            <span className="text-zinc-400 text-sm font-mono truncate max-w-xs">
+            <span className="text-zinc-400 text-sm font-sans truncate max-w-xs">
               {status?.current_url ?? "Crawling…"}
             </span>
           </div>
@@ -186,11 +186,11 @@ export default function ProgressStream({ auditId }: { auditId: string }) {
                   className="flex items-center gap-3 px-5 py-3 transition-opacity duration-300"
                   style={{ animation: "fadeSlideIn 0.3s ease-out" }}
                 >
-                  <span className="text-green-500 text-xs font-mono shrink-0 w-5 text-right">
+                  <span className="text-green-500 text-xs font-sans shrink-0 w-5 text-right">
                     {i + 1}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-zinc-300 text-xs font-mono truncate">{pageUrl}</p>
+                    <p className="text-zinc-300 text-xs font-sans truncate">{pageUrl}</p>
                   </div>
                   <span className="text-green-700 text-xs shrink-0">✓</span>
                 </div>
@@ -214,7 +214,7 @@ export default function ProgressStream({ auditId }: { auditId: string }) {
           <h1 className="text-xl font-semibold text-white">
             {isCrawling ? "Connecting to browser-use…" : phaseLabel(phase)}
           </h1>
-          <p className="text-zinc-500 text-sm mt-1 font-mono truncate max-w-sm mx-auto">
+          <p className="text-zinc-500 text-sm mt-1 font-sans truncate max-w-sm mx-auto">
             {status?.current_url ?? "Starting up"}
           </p>
           {status?.agent_status && (
@@ -251,7 +251,7 @@ export default function ProgressStream({ auditId }: { auditId: string }) {
               <span className="ml-auto text-xs text-zinc-600">{pages.length} pages found</span>
             )}
           </div>
-          <div className="h-52 overflow-y-auto px-4 py-3 space-y-1.5 font-mono text-xs">
+          <div className="h-52 overflow-y-auto px-4 py-3 space-y-1.5 font-sans text-xs">
             {log.length === 0 && <p className="text-zinc-600">Connecting to stream…</p>}
             {log.map((entry, i) => (
               <div key={i} className="flex items-start gap-3">

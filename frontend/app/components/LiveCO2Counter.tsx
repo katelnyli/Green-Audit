@@ -37,12 +37,12 @@ export default function LiveCO2Counter({ value, baseline }: Props) {
 
   return (
     <div className="text-center">
-      <p className="text-5xl font-bold tabular-nums text-[#7ec87e] font-mono">
+      <p className="text-5xl font-bold tabular-nums text-[#7ec87e] font-sans">
         {displayed.toFixed(2)}
         <span className="text-2xl font-normal text-[#4a6a4a] ml-1">gCO₂</span>
       </p>
       {saved > 0 && (
-        <p className="mt-1 text-[#7ec87e] text-sm font-medium font-mono">
+        <p className="mt-1 text-[#7ec87e] text-sm font-medium font-sans">
           ↓ {saved.toFixed(2)}g saved ({pctSaved}% reduction)
         </p>
       )}
