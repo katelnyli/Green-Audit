@@ -3,8 +3,9 @@ Crawler: browser-use-sdk for live preview + autonomous URL discovery,
          httpx for per-page metrics.
 
 Strategy for demo reliability:
-  - Stop collecting as soon as we have MAX_PAGES, don't wait for the full task
-  - Fetch live_url concurrently so it never blocks the step-polling loop
+  - 3 parallel browser-use agents explore the site concurrently
+  - Stop collecting as soon as we have MAX_PAGES total across all agents
+  - First agent's live_url shown in the iframe
   - httpx measures real transfer size and load time for every discovered URL
 """
 
@@ -22,23 +23,39 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-MAX_PAGES = 4          # stop collecting after this many — keeps demo fast
+MAX_PAGES = 20         # total pages to collect across all agents
+NUM_AGENTS = 3         # parallel browser-use agents
+PAGES_PER_AGENT = (MAX_PAGES + NUM_AGENTS - 1) // NUM_AGENTS  # ceil(20/3) = 7
 POLL_INTERVAL = 1.0    # seconds between browser-use step polls (reduced from 3.0)
-CRAWL_TIMEOUT = 150    # bail out after 2.5 min regardless
+CRAWL_TIMEOUT = 300    # bail out after 5 min regardless
 
-_PROMPT = (
-    "You are auditing {url} for a sustainability report. "
-    "Visit the homepage, then click up to {max_pages} main navigation links "
-    "to explore different sections of the site. "
-    "Stay on the same domain ({domain}). "
-    "Do not fill in forms, log in, or click external links."
-)
+_PROMPTS = [
+    (
+        "You are auditing {url} for a sustainability report. Agent 1 of 3. "
+        "Start on the homepage, then follow main navigation links. "
+        "Stay on the same domain ({domain}). "
+        "Do not fill in forms, log in, or click external links."
+    ),
+    (
+        "You are auditing {url} for a sustainability report. Agent 2 of 3. "
+        "Start on the homepage, then focus on product, service, or content section links. "
+        "Stay on the same domain ({domain}). "
+        "Do not fill in forms, log in, or click external links."
+    ),
+    (
+        "You are auditing {url} for a sustainability report. Agent 3 of 3. "
+        "Start on the homepage, then explore about, blog, or resource section links. "
+        "Stay on the same domain ({domain}). "
+        "Do not fill in forms, log in, or click external links."
+    ),
+]
 
 
 async def crawl(
     url: str,
     credentials: dict | None,
     on_live_url: Callable[[str], None] | None = None,
+    on_agent_live_url: Callable[[int, str], None] | None = None,
     on_page_discovered: Callable[[str], None] | None = None,
     on_agent_status: Callable[[str], None] | None = None,
 ) -> list[dict]:
@@ -49,70 +66,88 @@ async def crawl(
     from browser_use_sdk.v2.client import AsyncBrowserUse
     client = AsyncBrowserUse(api_key=api_key)
     domain = urlparse(url).hostname or urlparse(url).netloc
-    prompt = _PROMPT.format(url=url, domain=domain, max_pages=MAX_PAGES)
 
-    # ── 1. Create browser-use task ────────────────────────────────────────────
-    task_resp = await client.tasks.create(
-        task=prompt,
-        start_url=url,
-        max_steps=15,  # reduced from 40 — we only need 4 pages, don't waste steps
-    )
-    task_id = str(task_resp.id)
-    session_id = str(task_resp.session_id)
-    logger.info("task=%s session=%s", task_id, session_id)
-
-    # ── 2. Fetch live_url in background — never blocks step polling ───────────
-    asyncio.create_task(_fetch_live_url(client, session_id, on_live_url))
-
-    # ── 3. Poll steps; exit as soon as we have MAX_PAGES ─────────────────────
+    # Shared state across agents (protected by asyncio single-thread)
     discovered: list[str] = []
     seen: set[str] = set()
-    seen_steps = 0
-    deadline = time.monotonic() + CRAWL_TIMEOUT
 
-    def _register(raw_url: str) -> None:
+    def _register(raw_url: str) -> bool:
+        """Returns True if this was a new URL. Thread-safe in asyncio."""
         normed = raw_url.rstrip("/")
         host = urlparse(normed).hostname or ""
         same_site = host == domain or host.endswith("." + domain)
-        if normed and normed not in seen and same_site:
+        if normed and normed not in seen and same_site and len(discovered) < MAX_PAGES:
             seen.add(normed)
             discovered.append(normed)
             logger.info("discovered: %s", normed)
             if on_page_discovered:
                 on_page_discovered(normed)
+            return True
+        return False
 
     _register(url)  # homepage is page #1
 
-    while time.monotonic() < deadline and len(discovered) < MAX_PAGES:
-        await asyncio.sleep(POLL_INTERVAL)
+    # ── Launch all agents concurrently ────────────────────────────────────────
+    async def run_agent(agent_idx: int) -> None:
+        prompt = _PROMPTS[agent_idx].format(url=url, domain=domain)
         try:
-            task_view = await client.tasks.get(task_id)
+            task_resp = await client.tasks.create(
+                task=prompt,
+                start_url=url,
+                max_steps=60,
+            )
         except Exception as e:
-            logger.warning("poll failed: %s", e)
-            continue
+            logger.warning("agent %d failed to start: %s", agent_idx, e)
+            return
 
-        new_steps = task_view.steps[seen_steps:]
-        for step in new_steps:
-            if step.url:
-                _register(step.url)
-        if new_steps and on_agent_status:
-            # latest step's goal gives the user live feedback on what the agent is doing
-            on_agent_status(new_steps[-1].next_goal)
-        seen_steps = len(task_view.steps)
+        task_id = str(task_resp.id)
+        session_id = str(task_resp.session_id)
+        logger.info("agent=%d task=%s session=%s", agent_idx, task_id, session_id)
 
-        if task_view.status.value in ("finished", "stopped", "failed"):
-            break
+        # Each agent fetches its own live_url; agent 0 also fires the legacy on_live_url callback
+        def _make_live_cb(idx: int):
+            def _cb(lurl: str) -> None:
+                if on_agent_live_url:
+                    on_agent_live_url(idx, lurl)
+                if idx == 0 and on_live_url:
+                    on_live_url(lurl)
+            return _cb
 
-    # ── 4. Stop the browser-use task (best-effort) ────────────────────────────
-    try:
-        await client.tasks.stop(task_id)
-    except Exception:
-        pass
+        asyncio.create_task(_fetch_live_url(client, session_id, _make_live_cb(agent_idx)))
+
+        seen_steps = 0
+        deadline = time.monotonic() + CRAWL_TIMEOUT
+
+        while time.monotonic() < deadline and len(discovered) < MAX_PAGES:
+            await asyncio.sleep(POLL_INTERVAL)
+            try:
+                task_view = await client.tasks.get(task_id)
+            except Exception as e:
+                logger.warning("agent %d poll failed: %s", agent_idx, e)
+                continue
+
+            new_steps = task_view.steps[seen_steps:]
+            for step in new_steps:
+                if step.url:
+                    _register(step.url)
+            if new_steps and on_agent_status:
+                on_agent_status(f"[Agent {agent_idx + 1}] {new_steps[-1].next_goal}")
+            seen_steps = len(task_view.steps)
+
+            if task_view.status.value in ("finished", "stopped", "failed"):
+                break
+
+        try:
+            await client.tasks.stop(task_id)
+        except Exception:
+            pass
+
+    await asyncio.gather(*[run_agent(i) for i in range(NUM_AGENTS)], return_exceptions=True)
 
     if not discovered:
         discovered = [url.rstrip("/")]
 
-    # ── 5. Measure each page with httpx (concurrent) ──────────────────────────
+    # ── Measure each page with httpx (concurrent) ─────────────────────────────
     results = await asyncio.gather(
         *[_measure_page(u) for u in discovered[:MAX_PAGES]],
         return_exceptions=True,

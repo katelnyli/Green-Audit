@@ -19,6 +19,7 @@ async def run_full_audit(
     credentials: dict | None,
     on_progress: Callable[[str, int, int, str], None],
     on_live_url: Callable[[str], None] | None = None,
+    on_agent_live_url: Callable[[int, str], None] | None = None,
     on_page_discovered: Callable[[str], None] | None = None,
     on_agent_status: Callable[[str], None] | None = None,
 ) -> AuditResult:
@@ -30,6 +31,7 @@ async def run_full_audit(
         url,
         credentials,
         on_live_url=on_live_url,
+        on_agent_live_url=on_agent_live_url,
         on_page_discovered=on_page_discovered,
         on_agent_status=on_agent_status,
     )

@@ -107,7 +107,8 @@ class AuditStatus(BaseModel):
     progress: int | None = None       # pages completed so far
     total: int | None = None
     current_url: str | None = None
-    live_url: str | None = None       # browser-use live preview URL for iframe
+    live_url: str | None = None       # first agent's live preview URL (backward compat)
+    live_urls: list[str] = []         # live preview URLs for all agents (index = agent idx)
     pages_discovered: list[str] = []  # URLs found so far during crawl
     agent_status: str | None = None   # latest browser-use step goal — updates every few seconds
     result: AuditResult | None = None

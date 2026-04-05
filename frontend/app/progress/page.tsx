@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { streamAudit } from "@/app/lib/api";
 import type { AuditStatus } from "@/app/types/audit";
 
+const AGENT_LABELS = ["Navigation", "Products & Services", "About & Blog"];
+
 export default function Progress() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -12,7 +14,8 @@ export default function Progress() {
 
   const [status, setStatus] = useState<AuditStatus | null>(null);
   const [error, setError] = useState("");
-  const [iframeBlocked, setIframeBlocked] = useState(false);
+  const [activeAgent, setActiveAgent] = useState(0);
+  const [blockedAgents, setBlockedAgents] = useState<boolean[]>([false, false, false]);
   const pagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -34,6 +37,23 @@ export default function Progress() {
   useEffect(() => {
     pagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [status?.pages_discovered?.length]);
+
+  // Auto-switch tab to whichever agent last reported status
+  useEffect(() => {
+    if (!status?.agent_status) return;
+    const m = status.agent_status.match(/^\[Agent (\d+)\]/);
+    if (m) {
+      const idx = parseInt(m[1], 10) - 1;
+      if (idx >= 0 && idx <= 2) setActiveAgent(idx);
+    }
+  }, [status?.agent_status]);
+
+  // Auto-switch to first agent that gets a live_url
+  useEffect(() => {
+    if (!status?.live_urls) return;
+    const firstLive = status.live_urls.findIndex((u) => !!u);
+    if (firstLive !== -1) setActiveAgent(firstLive);
+  }, [status?.live_urls?.length]);
 
   if (error) {
     return (
@@ -63,7 +83,7 @@ export default function Progress() {
   })();
 
   const pagesDiscovered = status.pages_discovered ?? [];
-  const liveUrl = status.live_url ?? null;
+  const liveUrls = status.live_urls ?? [];
 
   const phaseLabel: Record<string, string> = {
     queued: "Queued...",
@@ -74,69 +94,68 @@ export default function Progress() {
     error: "Error",
   };
 
+  const activeUrl = liveUrls[activeAgent] ?? null;
+
   return (
     <div className="flex h-screen bg-[#0a0f0a]">
 
-      {/* ── LEFT: Status feed ─────────────────────────────────────────────── */}
-      <div className="w-1/2 border-r border-[#1a2a1a] flex flex-col">
+      {/* ── LEFT: Status feed (narrower) ──────────────────────────────────── */}
+      <div className="w-[38%] border-r border-[#1a2a1a] flex flex-col shrink-0">
 
         {/* Header */}
-        <div className="p-6 border-b border-[#1a2a1a] shrink-0">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className={`w-3 h-3 rounded-full ${
+        <div className="p-5 border-b border-[#1a2a1a] shrink-0">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className={`w-2.5 h-2.5 rounded-full ${
                 status.status === "done" ? "bg-[#7ec87e]" : "bg-[#7ec87e] animate-pulse"
               }`} />
-              <h1 className="text-xl font-semibold text-[#ededed]">
+              <h1 className="text-base font-semibold text-[#ededed] truncate">
                 {status.status === "done" ? "Completed" : `Scanning ${domain}`}
               </h1>
             </div>
-            {/* ① Back button */}
-            <a href="/" className="text-[#606060] hover:text-[#7ec87e] text-sm transition-colors">
+            <a href="/" className="text-[#606060] hover:text-[#7ec87e] text-xs transition-colors shrink-0 ml-2">
               ← New Audit
             </a>
           </div>
-
-          {/* Phase */}
-          <div className="text-[#7ec87e] font-mono text-sm">
+          <div className="text-[#7ec87e] font-mono text-xs">
             {phaseLabel[status.status] ?? status.status}
           </div>
         </div>
 
         {/* Live feed */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4 font-mono text-sm">
+        <div className="flex-1 overflow-y-auto p-5 space-y-4 font-mono text-xs">
 
-          {/* ③ Agent status — updates every few seconds via SSE */}
+          {/* Agent status */}
           {status.agent_status && status.status === "crawling" && (
             <div className="bg-[#0f1a0f] border border-[#1a2a1a] rounded p-3">
-              <div className="flex items-center gap-2 mb-1">
+              <div className="flex items-center gap-2 mb-1.5">
                 <div className="w-1.5 h-1.5 rounded-full bg-[#7ec87e] animate-pulse" />
-                <span className="text-[#7ec87e] text-xs uppercase tracking-wider">Agent</span>
+                <span className="text-[#7ec87e] text-xs uppercase tracking-wider">Agent activity</span>
               </div>
-              <div className="text-[#ededed] text-sm leading-snug">{status.agent_status}</div>
+              <div className="text-[#ededed] leading-snug">{status.agent_status}</div>
             </div>
           )}
 
           {/* Current URL (non-crawl phases) */}
           {status.current_url && status.status !== "crawling" && (
             <div>
-              <div className="text-[#7ec87e] mb-1 text-xs uppercase tracking-wider">Current URL</div>
-              <div className="text-[#a0a0a0] break-all text-xs">{status.current_url}</div>
+              <div className="text-[#7ec87e] mb-1 uppercase tracking-wider">Current URL</div>
+              <div className="text-[#a0a0a0] break-all">{status.current_url}</div>
             </div>
           )}
 
-          {/* ③ Pages discovered — scrolling live list during crawl */}
+          {/* Pages discovered */}
           {pagesDiscovered.length > 0 && (
             <div>
-              <div className="text-[#7ec87e] mb-2 text-xs uppercase tracking-wider">
+              <div className="text-[#7ec87e] mb-2 uppercase tracking-wider">
                 Pages Discovered ({pagesDiscovered.length})
               </div>
               <div className="space-y-1">
                 {pagesDiscovered.map((url, i) => (
-                  <div key={url} className="flex items-center gap-2 text-[#a0a0a0] hover:text-[#ededed] transition-colors">
-                    <span className="text-[#7ec87e] text-xs w-4 text-right shrink-0">{i + 1}</span>
-                    <span className="truncate text-xs">{url}</span>
-                    <span className="text-[#7ec87e] shrink-0 text-xs">✓</span>
+                  <div key={url} className="flex items-center gap-2 text-[#a0a0a0]">
+                    <span className="text-[#7ec87e] w-4 text-right shrink-0">{i + 1}</span>
+                    <span className="truncate flex-1">{url}</span>
+                    <span className="text-[#7ec87e] shrink-0">✓</span>
                   </div>
                 ))}
                 <div ref={pagesEndRef} />
@@ -147,10 +166,10 @@ export default function Progress() {
           {/* Pages from completed result */}
           {status.result && status.result.pages.length > 0 && (
             <div>
-              <div className="text-[#7ec87e] mb-2 text-xs uppercase tracking-wider">Pages Scanned</div>
+              <div className="text-[#7ec87e] mb-2 uppercase tracking-wider">Pages Scanned</div>
               <div className="space-y-1">
                 {status.result.pages.map((page, i) => (
-                  <div key={i} className="flex items-center gap-2 text-[#a0a0a0] text-xs">
+                  <div key={i} className="flex items-center gap-2 text-[#a0a0a0]">
                     <div className="w-1.5 h-1.5 rounded-full bg-[#7ec87e] shrink-0" />
                     <span className="flex-1 truncate">{page.url}</span>
                     <span className="text-[#606060]">
@@ -164,77 +183,111 @@ export default function Progress() {
         </div>
       </div>
 
-      {/* ── RIGHT: Live browser preview ───────────────────────────────────── */}
-      <div className="w-1/2 flex flex-col">
-        <div className="p-4 border-b border-[#1a2a1a] shrink-0">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-xs uppercase tracking-wider text-[#606060]">
-              Live Browser Preview
-            </div>
-            {/* ① open-in-tab fallback link */}
-            {liveUrl && (
+      {/* ── RIGHT: Tabbed agent view ───────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col min-w-0">
+
+        {/* Tab bar */}
+        <div className="flex items-stretch border-b border-[#1a2a1a] shrink-0 bg-[#0a0f0a]">
+          {[0, 1, 2].map((idx) => {
+            const hasUrl = !!liveUrls[idx];
+            const isActive = activeAgent === idx;
+            return (
+              <button
+                key={idx}
+                onClick={() => setActiveAgent(idx)}
+                className={`flex items-center gap-2 px-5 py-3 text-xs font-mono border-r border-[#1a2a1a] transition-colors relative
+                  ${isActive
+                    ? "bg-[#0f1a0f] text-[#ededed]"
+                    : "text-[#606060] hover:text-[#a0a0a0] hover:bg-[#0f1a0f]/50"
+                  }`}
+              >
+                {/* Active tab indicator line */}
+                {isActive && (
+                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#7ec87e]" />
+                )}
+                <div className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors ${
+                  hasUrl ? "bg-[#7ec87e] animate-pulse" : "bg-[#303030]"
+                }`} />
+                <span>Agent {idx + 1}</span>
+                <span className={`hidden sm:inline ${isActive ? "text-[#606060]" : "text-[#404040]"}`}>
+                  — {AGENT_LABELS[idx]}
+                </span>
+              </button>
+            );
+          })}
+
+          {/* Spacer + open-in-tab link */}
+          <div className="flex-1 flex items-center justify-end px-4">
+            {activeUrl && (
               <a
-                href={liveUrl}
+                href={activeUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[#7ec87e] text-xs hover:underline"
+                className="text-[#606060] hover:text-[#7ec87e] text-xs transition-colors"
               >
                 Open in new tab ↗
               </a>
             )}
           </div>
-          {/* URL bar */}
-          <div className="bg-[#0f1a0f] border border-[#1a2a1a] rounded px-3 py-1.5 font-mono text-xs text-[#a0a0a0] truncate">
-            {status.current_url || "Waiting..."}
+        </div>
+
+        {/* URL bar */}
+        <div className="px-4 py-2 border-b border-[#1a2a1a] bg-[#0f1a0f] shrink-0">
+          <div className="bg-[#0a0f0a] border border-[#1a2a1a] rounded px-3 py-1.5 font-mono text-xs text-[#a0a0a0] truncate">
+            {activeUrl || (status.status === "crawling" ? "Waiting for agent…" : "No preview available")}
           </div>
         </div>
 
-        {/* ② Iframe when live_url is available */}
-        {liveUrl && !iframeBlocked ? (
+        {/* Iframe panel */}
+        {activeUrl && !blockedAgents[activeAgent] ? (
           <iframe
-            src={liveUrl}
+            key={activeAgent}
+            src={activeUrl}
             className="flex-1 w-full bg-[#0f1a0f]"
-            title="Live browser"
+            title={`Agent ${activeAgent + 1}`}
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-            onError={() => setIframeBlocked(true)}
+            onError={() =>
+              setBlockedAgents((prev) => {
+                const next = [...prev];
+                next[activeAgent] = true;
+                return next;
+              })
+            }
           />
-        ) : liveUrl && iframeBlocked ? (
-          /* iframe was blocked by X-Frame-Options */
+        ) : activeUrl && blockedAgents[activeAgent] ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-4 bg-[#0f1a0f]">
-            <div className="text-[#606060] text-sm text-center">
-              Live preview blocked by browser security policy.
-            </div>
+            <div className="text-[#606060] text-sm">Preview blocked by site security policy.</div>
             <a
-              href={liveUrl}
+              href={activeUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="px-4 py-2 bg-[#7ec87e] text-[#0a0f0a] text-sm font-semibold rounded hover:bg-[#6db86d] transition-colors"
             >
-              Watch live in new tab ↗
+              Watch Agent {activeAgent + 1} live in new tab ↗
             </a>
           </div>
         ) : (
-          /* No live_url yet — show spinner */
           <div className="flex-1 flex items-center justify-center bg-[#0f1a0f] relative">
-            <div className="absolute inset-0 opacity-10">
-              <div className="w-full h-full" style={{
-                backgroundImage: `linear-gradient(#7ec87e 1px, transparent 1px), linear-gradient(90deg, #7ec87e 1px, transparent 1px)`,
-                backgroundSize: "50px 50px",
-              }} />
-            </div>
-            <div className="relative text-center">
+            <div className="absolute inset-0 opacity-5" style={{
+              backgroundImage: `linear-gradient(#7ec87e 1px, transparent 1px), linear-gradient(90deg, #7ec87e 1px, transparent 1px)`,
+              backgroundSize: "40px 40px",
+            }} />
+            <div className="relative text-center space-y-3">
               {status.status === "done" ? (
                 <>
-                  <div className="w-16 h-16 border-4 border-[#7ec87e] rounded-full flex items-center justify-center mx-auto mb-4">
-                    <div className="text-[#7ec87e] text-2xl">✓</div>
+                  <div className="w-14 h-14 border-4 border-[#7ec87e] rounded-full flex items-center justify-center mx-auto">
+                    <div className="text-[#7ec87e] text-xl">✓</div>
                   </div>
-                  <div className="text-[#7ec87e] font-mono">audit complete</div>
+                  <div className="text-[#7ec87e] font-mono text-sm">audit complete</div>
                 </>
               ) : (
                 <>
-                  <div className="w-16 h-16 border-4 border-[#7ec87e] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                  <div className="w-14 h-14 border-4 border-[#7ec87e] border-t-transparent rounded-full animate-spin mx-auto" />
                   <div className="text-[#7ec87e] font-mono text-sm">
-                    {status.status === "crawling" ? "Waiting for browser agent..." : "browser agent active"}
+                    Agent {activeAgent + 1} connecting…
+                  </div>
+                  <div className="text-[#404040] text-xs">
+                    {liveUrls.filter(Boolean).length} of 3 agents live
                   </div>
                 </>
               )}
