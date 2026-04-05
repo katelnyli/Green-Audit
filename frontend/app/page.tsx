@@ -54,6 +54,27 @@ export default function Home() {
                 />
               </div>
 
+              {/* Pages to crawl */}
+              <div>
+                <div className="text-[#606060] text-sm mb-3">Pages to crawl</div>
+                <div className="flex gap-2">
+                  {[5, 10, 15, 20].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setMaxPages(n)}
+                      className={`flex-1 py-2 rounded font-mono text-sm border transition-colors ${
+                        maxPages === n
+                          ? "bg-[#7ec87e] text-[#0a0f0a] border-[#7ec87e]"
+                          : "bg-[#0a0f0a] text-[#606060] border-[#1a2a1a] hover:border-[#7ec87e] hover:text-[#7ec87e]"
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {error && (
                 <div className="text-[#ff6b6b] text-sm">{error}</div>
               )}
