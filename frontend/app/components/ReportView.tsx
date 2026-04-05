@@ -9,23 +9,6 @@ const ANNUAL_LOADS = MONTHLY_VISITORS * 12; // 1.2 M page loads/year
 const TREE_KG = 22;         // kg CO₂ absorbed per tree per year
 const CAR_KG_PER_KM = 0.12; // kg CO₂ per km driven (avg car)
 
-// ── Grade helpers ─────────────────────────────────────────────────────────────
-type GradeKey = "A" | "B" | "C" | "D" | "F";
-
-const GRADE_COLOR: Record<GradeKey, string> = {
-  A: "#7ec87e", B: "#a8d87e", C: "#d8c87e", D: "#d8957e", F: "#c87e7e",
-};
-const GRADE_DIM: Record<GradeKey, string> = {
-  A: "#2a4a2a", B: "#3a4a1a", C: "#4a3a1a", D: "#4a2a1a", F: "#4a1a1a",
-};
-
-function co2Grade(avgGrams: number): GradeKey {
-  if (avgGrams <= 0.3) return "A";
-  if (avgGrams <= 0.6) return "B";
-  if (avgGrams <= 1.2) return "C";
-  if (avgGrams <= 2.5) return "D";
-  return "F";
-}
 
 const IMPACT_BADGE: Record<Impact, string> = {
   high:   "bg-[#2a0f0f] text-[#c87e7e] border-[#4a1a1a]",
@@ -92,9 +75,6 @@ export default function ReportView({ result }: { result: AuditResult }) {
 
   const afterCo2Kg       = Math.max(0.01, annualCo2Kg * (1 - savingsPct / 100));
   const afterTreesNeeded = Math.max(1, Math.ceil(afterCo2Kg / TREE_KG));
-  const afterAvgCo2      = avgCo2PerPage * (1 - savingsPct / 100);
-  const currentGrade     = (summary.grade ?? co2Grade(avgCo2PerPage)) as GradeKey;
-  const afterGrade       = co2Grade(afterAvgCo2) as GradeKey;
 
   const domain = (() => { try { return new URL(result.target_url).hostname; } catch { return result.target_url; } })();
 
@@ -115,32 +95,33 @@ export default function ReportView({ result }: { result: AuditResult }) {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0f0a] text-[#e8ede8]">
+    <div className="relative min-h-screen bg-[#0a0f0a] text-[#e8ede8] overflow-x-hidden">
+      {/* Dot grid */}
+      <div className="dot-grid fixed inset-0 pointer-events-none opacity-50" />
+      {/* Top glow */}
+      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] pointer-events-none"
+        style={{ background: "radial-gradient(ellipse at 50% 0%, rgba(126,200,126,0.08) 0%, transparent 70%)" }} />
 
       {/* ── Sticky top bar ──────────────────────────────────────────── */}
-      <div className="sticky top-0 z-10 bg-[#0a0f0a]/95 backdrop-blur border-b border-[#1a2a1a] px-8 py-3 flex items-center justify-between">
+      <div className="sticky top-0 z-10 bg-[#0a0f0a]/90 backdrop-blur border-b border-[#1a2a1a] px-8 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <a href="/" className="text-[#3a5a3a] hover:text-[#7ec87e] text-xs font-mono transition-colors">← New audit</a>
+          <a href="/" className="text-[#404040] hover:text-[#7ec87e] text-xs font-mono transition-colors">← New audit</a>
           <span className="text-[#1a2a1a]">|</span>
-          <span className="text-[#7ec87e] font-mono text-sm truncate max-w-sm">{domain}</span>
+          <span className="text-[#606060] font-mono text-xs truncate max-w-sm">{domain}</span>
         </div>
         <div className="flex items-center gap-3">
-          <div className="px-3 py-1 rounded border font-mono text-sm font-bold"
-            style={{ color: GRADE_COLOR[currentGrade], borderColor: GRADE_DIM[currentGrade], backgroundColor: GRADE_DIM[currentGrade] + "60" }}>
-            Grade {currentGrade}
-          </div>
           <button onClick={exportPatch} disabled={fixes.length === 0}
-            className="px-4 py-1.5 bg-[#7ec87e] text-[#0a0f0a] font-mono text-xs font-bold rounded hover:bg-[#6db86d] transition-colors disabled:opacity-40">
+            className="px-4 py-1.5 shimmer-btn text-[#0a0f0a] font-mono text-xs font-bold rounded-lg transition-colors disabled:bg-[#3a5a3a] disabled:opacity-40 disabled:cursor-not-allowed">
             Export {fixes.length} fixes ↓
           </button>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-8 py-8 space-y-8">
+      <div className="relative z-10 max-w-6xl mx-auto px-8 py-8 space-y-8">
 
         {/* ── Hero cards ──────────────────────────────────────────────── */}
         <div className="grid grid-cols-4 gap-4">
-          <MetricCard label="Annual CO₂" value={fmtKg(annualCo2Kg)} sub="at 100k visitors/month" accent={GRADE_COLOR[currentGrade]} />
+          <MetricCard label="Annual CO₂" value={fmtKg(annualCo2Kg)} sub="at 100k visitors/month" accent="#7ec87e" />
           <MetricCard label="Trees to Offset" value={`${treesNeeded}`} sub="new trees needed per year" accent="#7ec87e" />
           <MetricCard label="Car Equivalent" value={fmtKm(drivingKm)} sub="of driving per year" accent="#c8a87e" />
           <MetricCard
@@ -155,46 +136,29 @@ export default function ReportView({ result }: { result: AuditResult }) {
         <div className="grid grid-cols-2 gap-4">
 
           {/* Before */}
-          <div className="bg-[#0f1a0f] border border-[#1a2a1a] rounded-xl p-6">
-            <div className="text-xs font-mono uppercase text-[#3a5a3a] mb-5 tracking-wider">Current State</div>
-            <div className="flex items-start gap-5">
-              <div className="w-20 h-20 rounded-xl flex items-center justify-center text-4xl font-bold font-mono shrink-0 border-2"
-                style={{ color: GRADE_COLOR[currentGrade], borderColor: GRADE_DIM[currentGrade], backgroundColor: GRADE_DIM[currentGrade] + "60" }}>
-                {currentGrade}
-              </div>
-              <div className="space-y-2.5 flex-1 pt-1">
-                <Stat label="Annual CO₂" value={fmtKg(annualCo2Kg)} color={GRADE_COLOR[currentGrade]} />
-                <Stat label="Trees to offset" value={`${treesNeeded} trees/yr`} color={GRADE_COLOR[currentGrade]} />
-                <Stat label="Total transfer" value={fmt(summary.total_transfer_bytes)} color="#7ec87e" />
-                {showPerf && <Stat label="Avg performance" value={`${avgPerf}/100`} color={avgPerf >= 70 ? "#7ec87e" : avgPerf >= 50 ? "#c8a87e" : "#c87e7e"} />}
-              </div>
+          <div className="glass-card rounded-xl p-6">
+            <div className="text-xs font-mono uppercase text-[#404040] mb-5 tracking-wider">Current State</div>
+            <div className="space-y-2.5">
+              <Stat label="Annual CO₂" value={fmtKg(annualCo2Kg)} color="#c8a87e" />
+              <Stat label="Trees to offset" value={`${treesNeeded} trees/yr`} color="#c8a87e" />
+              <Stat label="Total transfer" value={fmt(summary.total_transfer_bytes)} color="#7ec87e" />
+              {showPerf && <Stat label="Avg performance" value={`${avgPerf}/100`} color={avgPerf >= 70 ? "#7ec87e" : avgPerf >= 50 ? "#c8a87e" : "#c87e7e"} />}
             </div>
           </div>
 
           {/* After */}
-          <div className="bg-[#0f1a0f] border border-[#1a4a1a] rounded-xl p-6 relative overflow-hidden">
-            <div className="absolute inset-0 opacity-[0.04]"
+          <div className="glass-card rounded-xl p-6 relative overflow-hidden border-[#1a4a1a]">
+            <div className="absolute inset-0 opacity-[0.04] pointer-events-none"
               style={{ backgroundImage: "radial-gradient(ellipse at 80% 40%, #7ec87e, transparent 65%)" }} />
             <div className="relative">
-              <div className="text-xs font-mono uppercase text-[#3a6a3a] mb-5 tracking-wider">
+              <div className="text-xs font-mono uppercase text-[#404040] mb-5 tracking-wider">
                 With {fixes.length} Fixes Applied
               </div>
-              <div className="flex items-start gap-5">
-                <div className="relative shrink-0">
-                  <div className="w-20 h-20 rounded-xl flex items-center justify-center text-4xl font-bold font-mono border-2"
-                    style={{ color: GRADE_COLOR[afterGrade], borderColor: GRADE_DIM[afterGrade], backgroundColor: GRADE_DIM[afterGrade] + "60" }}>
-                    {afterGrade}
-                  </div>
-                  {afterGrade !== currentGrade && (
-                    <div className="absolute -top-1.5 -right-1.5 bg-[#7ec87e] text-[#0a0f0a] text-xs font-bold px-1.5 py-0.5 rounded-full font-mono leading-none">↑</div>
-                  )}
-                </div>
-                <div className="space-y-2.5 flex-1 pt-1">
-                  <StatDiff label="Annual CO₂" before={fmtKg(annualCo2Kg)} after={fmtKg(afterCo2Kg)} saved={`−${Math.round(savingsPct)}%`} />
-                  <StatDiff label="Trees needed" before={`${treesNeeded}`} after={`${afterTreesNeeded}`} saved={treesNeeded > afterTreesNeeded ? `−${treesNeeded - afterTreesNeeded}` : "same"} />
-                  <Stat label="CO₂ saved/year" value={fmtKg(Math.max(0.001, annualCo2Kg - afterCo2Kg))} color="#7ec87e" />
-                  {showPerf && <Stat label="Performance" value={`${Math.min(100, avgPerf + Math.round(savingsPct * 0.3))}/100`} color="#7ec87e" />}
-                </div>
+              <div className="space-y-2.5">
+                <StatDiff label="Annual CO₂" before={fmtKg(annualCo2Kg)} after={fmtKg(afterCo2Kg)} saved={`−${Math.round(savingsPct)}%`} />
+                <StatDiff label="Trees needed" before={`${treesNeeded}`} after={`${afterTreesNeeded}`} saved={treesNeeded > afterTreesNeeded ? `−${treesNeeded - afterTreesNeeded}` : "same"} />
+                <Stat label="CO₂ saved/year" value={fmtKg(Math.max(0.001, annualCo2Kg - afterCo2Kg))} color="#7ec87e" />
+                {showPerf && <Stat label="Performance" value={`${Math.min(100, avgPerf + Math.round(savingsPct * 0.3))}/100`} color="#7ec87e" />}
               </div>
             </div>
           </div>
@@ -202,7 +166,7 @@ export default function ReportView({ result }: { result: AuditResult }) {
 
         {fixes.length > 0 && (
           <div>
-            <div className="text-xs font-mono uppercase text-[#3a5a3a] mb-4 tracking-wider">
+            <div className="text-xs font-mono uppercase text-[#404040] mb-4 tracking-wider">
               AI-Generated Code Fixes — ranked by impact
             </div>
             <div className="space-y-2">
@@ -212,9 +176,9 @@ export default function ReportView({ result }: { result: AuditResult }) {
                 const isOpen = expandedFix === i;
                 const pagePath = (() => { try { return new URL(fix.page_url).pathname || "/"; } catch { return fix.page_url; } })();
                 return (
-                  <div key={i} className="bg-[#0f1a0f] border border-[#1a2a1a] rounded-lg overflow-hidden">
+                  <div key={i} className="glass-card rounded-lg overflow-hidden">
                     <button
-                      className="w-full flex items-center gap-4 px-5 py-4 hover:bg-[#141f14] transition-colors text-left"
+                      className="w-full flex items-center gap-4 px-5 py-4 hover:bg-[#0f1a0f]/60 transition-colors text-left"
                       onClick={() => setExpandedFix(isOpen ? null : i)}
                     >
                       <span className={`text-xs px-2 py-0.5 rounded border font-mono shrink-0 ${IMPACT_BADGE[impact]}`}>
@@ -250,8 +214,8 @@ export default function ReportView({ result }: { result: AuditResult }) {
         {/* ── Page breakdown ───────────────────────────────────────────── */}
         {pages.length > 0 && (
           <div>
-            <div className="text-xs font-mono uppercase text-[#3a5a3a] mb-4 tracking-wider">CO₂ Per Page</div>
-            <div className="bg-[#0f1a0f] border border-[#1a2a1a] rounded-xl overflow-hidden">
+            <div className="text-xs font-mono uppercase text-[#404040] mb-4 tracking-wider">CO₂ Per Page</div>
+            <div className="glass-card rounded-xl overflow-hidden">
               {pages.slice().sort((a, b) => b.estimated_co2_grams - a.estimated_co2_grams).map((page, i, arr) => {
                 const maxCo2 = Math.max(...arr.map(p => p.estimated_co2_grams), 0.0001);
                 const pct = safePct(page.estimated_co2_grams, maxCo2);
@@ -290,10 +254,10 @@ export default function ReportView({ result }: { result: AuditResult }) {
 
 function MetricCard({ label, value, sub, accent }: { label: string; value: string; sub: string; accent: string }) {
   return (
-    <div className="bg-[#0f1a0f] border border-[#1a2a1a] rounded-xl p-5">
-      <div className="text-xs font-mono uppercase text-[#3a5a3a] mb-2 tracking-wider">{label}</div>
+    <div className="stat-card glass-card rounded-xl p-5">
+      <div className="text-xs font-mono uppercase text-[#404040] mb-2 tracking-wider">{label}</div>
       <div className="text-3xl font-mono font-bold mb-1 leading-none" style={{ color: accent }}>{value}</div>
-      <div className="text-xs text-[#3a5a3a] font-mono mt-1">{sub}</div>
+      <div className="text-xs text-[#404040] font-mono mt-1">{sub}</div>
     </div>
   );
 }
