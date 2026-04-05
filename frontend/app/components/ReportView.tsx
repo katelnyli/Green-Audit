@@ -6,8 +6,8 @@ import type { AuditResult, Impact } from "@/app/types/audit";
 // ── Projection constants ──────────────────────────────────────────────────────
 const MONTHLY_VISITORS = 100_000;
 const ANNUAL_LOADS = MONTHLY_VISITORS * 12; // 1.2 M page loads/year
-const TREE_KG = 22;         // kg CO₂ absorbed per tree per year
-const CAR_KG_PER_KM = 0.12; // kg CO₂ per km driven (avg car)
+const TREE_GRAMS = 22_000;      // grams CO₂ absorbed per tree per year
+const CAR_GRAMS_PER_KM = 120;   // grams CO₂ per km driven (avg car)
 
 // ── Grade helpers ─────────────────────────────────────────────────────────────
 type GradeKey = "A" | "B" | "C" | "D" | "F";
@@ -45,11 +45,11 @@ function humanFlag(f: string) {
   return map[f] ?? f.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
-function fmtKg(kg: number): string {
-  if (kg >= 1000) return `${(kg / 1000).toFixed(1)}t`;
-  if (kg >= 100)  return `${Math.round(kg)} kg`;
-  if (kg >= 10)   return `${kg.toFixed(1)} kg`;
-  return `${kg.toFixed(2)} kg`;
+function fmtGrams(grams: number): string {
+  if (grams >= 1_000_000) return `${(grams / 1_000_000).toFixed(1)}t`;
+  if (grams >= 1_000) return `${(grams / 1_000).toFixed(1)} kg`;
+  if (grams >= 1) return `${Math.round(grams)}g`;
+  return `${grams.toFixed(2)}g`;
 }
 
 function fmtKm(km: number): string {
@@ -77,9 +77,9 @@ export default function ReportView({ result }: { result: AuditResult }) {
   const avgCo2PerPage = summary.total_estimated_co2_grams / numPages;
 
   // Annual projections — guaranteed non-zero for display
-  const annualCo2Kg = Math.max(0.01, (avgCo2PerPage * ANNUAL_LOADS) / 1000);
-  const treesNeeded = Math.max(1, Math.ceil(annualCo2Kg / TREE_KG));
-  const drivingKm   = Math.max(1, Math.round(annualCo2Kg / CAR_KG_PER_KM));
+  const annualCo2Grams = Math.max(1, avgCo2PerPage * ANNUAL_LOADS);
+  const treesNeeded = Math.max(1, Math.ceil(annualCo2Grams / TREE_GRAMS));
+  const drivingKm   = Math.max(1, Math.round(annualCo2Grams / CAR_GRAMS_PER_KM));
 
   const avgPerf = pages.length > 0
     ? Math.round(pages.reduce((s, p) => s + p.lighthouse.performance, 0) / pages.length)
@@ -90,8 +90,8 @@ export default function ReportView({ result }: { result: AuditResult }) {
   const totalSavingsG = fixes.reduce((s, f) => s + f.estimated_co2_saved, 0);
   const savingsPct    = safePct(totalSavingsG, summary.total_estimated_co2_grams || 1);
 
-  const afterCo2Kg       = Math.max(0.01, annualCo2Kg * (1 - savingsPct / 100));
-  const afterTreesNeeded = Math.max(1, Math.ceil(afterCo2Kg / TREE_KG));
+  const afterCo2Grams    = Math.max(1, annualCo2Grams * (1 - savingsPct / 100));
+  const afterTreesNeeded = Math.max(1, Math.ceil(afterCo2Grams / TREE_GRAMS));
   const afterAvgCo2      = avgCo2PerPage * (1 - savingsPct / 100);
   const currentGrade     = (summary.grade ?? co2Grade(avgCo2PerPage)) as GradeKey;
   const afterGrade       = co2Grade(afterAvgCo2) as GradeKey;
@@ -125,10 +125,6 @@ export default function ReportView({ result }: { result: AuditResult }) {
           <span className="text-[#7ec87e] font-mono text-sm truncate max-w-sm">{domain}</span>
         </div>
         <div className="flex items-center gap-3">
-          <div className="px-3 py-1 rounded border font-mono text-sm font-bold"
-            style={{ color: GRADE_COLOR[currentGrade], borderColor: GRADE_DIM[currentGrade], backgroundColor: GRADE_DIM[currentGrade] + "60" }}>
-            Grade {currentGrade}
-          </div>
           <button onClick={exportPatch} disabled={fixes.length === 0}
             className="px-4 py-1.5 bg-[#7ec87e] text-[#0a0f0a] font-mono text-xs font-bold rounded hover:bg-[#6db86d] transition-colors disabled:opacity-40">
             Export {fixes.length} fixes ↓
@@ -140,7 +136,7 @@ export default function ReportView({ result }: { result: AuditResult }) {
 
         {/* ── Hero cards ──────────────────────────────────────────────── */}
         <div className="grid grid-cols-4 gap-4">
-          <MetricCard label="Annual CO₂" value={fmtKg(annualCo2Kg)} sub="at 100k visitors/month" accent={GRADE_COLOR[currentGrade]} />
+          <MetricCard label="Annual CO₂" value={fmtGrams(annualCo2Grams)} sub="at 100k visitors/month" accent="#7ec87e" />
           <MetricCard label="Trees to Offset" value={`${treesNeeded}`} sub="new trees needed per year" accent="#7ec87e" />
           <MetricCard label="Car Equivalent" value={fmtKm(drivingKm)} sub="of driving per year" accent="#c8a87e" />
           <MetricCard
@@ -157,17 +153,11 @@ export default function ReportView({ result }: { result: AuditResult }) {
           {/* Before */}
           <div className="bg-[#0f1a0f] border border-[#1a2a1a] rounded-xl p-6">
             <div className="text-xs font-mono uppercase text-[#3a5a3a] mb-5 tracking-wider">Current State</div>
-            <div className="flex items-start gap-5">
-              <div className="w-20 h-20 rounded-xl flex items-center justify-center text-4xl font-bold font-mono shrink-0 border-2"
-                style={{ color: GRADE_COLOR[currentGrade], borderColor: GRADE_DIM[currentGrade], backgroundColor: GRADE_DIM[currentGrade] + "60" }}>
-                {currentGrade}
-              </div>
-              <div className="space-y-2.5 flex-1 pt-1">
-                <Stat label="Annual CO₂" value={fmtKg(annualCo2Kg)} color={GRADE_COLOR[currentGrade]} />
-                <Stat label="Trees to offset" value={`${treesNeeded} trees/yr`} color={GRADE_COLOR[currentGrade]} />
-                <Stat label="Total transfer" value={fmt(summary.total_transfer_bytes)} color="#7ec87e" />
-                {showPerf && <Stat label="Avg performance" value={`${avgPerf}/100`} color={avgPerf >= 70 ? "#7ec87e" : avgPerf >= 50 ? "#c8a87e" : "#c87e7e"} />}
-              </div>
+            <div className="space-y-2.5">
+              <Stat label="Annual CO₂" value={fmtGrams(annualCo2Grams)} color="#7ec87e" />
+              <Stat label="Trees to offset" value={`${treesNeeded} trees/yr`} color="#7ec87e" />
+              <Stat label="Total transfer" value={fmt(summary.total_transfer_bytes)} color="#7ec87e" />
+              {showPerf && <Stat label="Avg performance" value={`${avgPerf}/100`} color={avgPerf >= 70 ? "#7ec87e" : avgPerf >= 50 ? "#c8a87e" : "#c87e7e"} />}
             </div>
           </div>
 
@@ -179,22 +169,11 @@ export default function ReportView({ result }: { result: AuditResult }) {
               <div className="text-xs font-mono uppercase text-[#3a6a3a] mb-5 tracking-wider">
                 With {fixes.length} Fixes Applied
               </div>
-              <div className="flex items-start gap-5">
-                <div className="relative shrink-0">
-                  <div className="w-20 h-20 rounded-xl flex items-center justify-center text-4xl font-bold font-mono border-2"
-                    style={{ color: GRADE_COLOR[afterGrade], borderColor: GRADE_DIM[afterGrade], backgroundColor: GRADE_DIM[afterGrade] + "60" }}>
-                    {afterGrade}
-                  </div>
-                  {afterGrade !== currentGrade && (
-                    <div className="absolute -top-1.5 -right-1.5 bg-[#7ec87e] text-[#0a0f0a] text-xs font-bold px-1.5 py-0.5 rounded-full font-mono leading-none">↑</div>
-                  )}
-                </div>
-                <div className="space-y-2.5 flex-1 pt-1">
-                  <StatDiff label="Annual CO₂" before={fmtKg(annualCo2Kg)} after={fmtKg(afterCo2Kg)} saved={`−${Math.round(savingsPct)}%`} />
-                  <StatDiff label="Trees needed" before={`${treesNeeded}`} after={`${afterTreesNeeded}`} saved={treesNeeded > afterTreesNeeded ? `−${treesNeeded - afterTreesNeeded}` : "same"} />
-                  <Stat label="CO₂ saved/year" value={fmtKg(Math.max(0.001, annualCo2Kg - afterCo2Kg))} color="#7ec87e" />
-                  {showPerf && <Stat label="Performance" value={`${Math.min(100, avgPerf + Math.round(savingsPct * 0.3))}/100`} color="#7ec87e" />}
-                </div>
+              <div className="space-y-2.5">
+                <StatDiff label="Annual CO₂" before={fmtGrams(annualCo2Grams)} after={fmtGrams(afterCo2Grams)} saved={`−${Math.round(savingsPct)}%`} />
+                <StatDiff label="Trees needed" before={`${treesNeeded}`} after={`${afterTreesNeeded}`} saved={treesNeeded > afterTreesNeeded ? `−${treesNeeded - afterTreesNeeded}` : "same"} />
+                <Stat label="CO₂ saved/year" value={fmtGrams(Math.max(1, annualCo2Grams - afterCo2Grams))} color="#7ec87e" />
+                {showPerf && <Stat label="Performance" value={`${Math.min(100, avgPerf + Math.round(savingsPct * 0.3))}/100`} color="#7ec87e" />}
               </div>
             </div>
           </div>
@@ -208,7 +187,7 @@ export default function ReportView({ result }: { result: AuditResult }) {
             <div className="space-y-2">
               {sortedFixes.map(({ fix, i }) => {
                 const impact = (summary.top_flags.find(f => f.type === fix.flag_type)?.impact ?? "medium") as Impact;
-                const fixAnnualKg = Math.max(0.001, (fix.estimated_co2_saved * ANNUAL_LOADS) / 1000);
+                const fixAnnualGrams = Math.max(1, fix.estimated_co2_saved * ANNUAL_LOADS);
                 const isOpen = expandedFix === i;
                 const pagePath = (() => { try { return new URL(fix.page_url).pathname || "/"; } catch { return fix.page_url; } })();
                 return (
@@ -220,13 +199,17 @@ export default function ReportView({ result }: { result: AuditResult }) {
                       <span className={`text-xs px-2 py-0.5 rounded border font-mono shrink-0 ${IMPACT_BADGE[impact]}`}>
                         {impact.toUpperCase()}
                       </span>
-                      <span className="flex-1 font-mono text-sm text-[#e8ede8]">{humanFlag(fix.flag_type)}</span>
-                      <span className="text-xs font-mono text-[#5a8a5a] shrink-0 hidden sm:block">{pagePath}</span>
-                      <span className="text-xs font-mono text-[#7ec87e] shrink-0 ml-4">saves ~{fmtKg(fixAnnualKg)}/yr</span>
+                      <span className="flex-1 font-mono text-sm text-[#e8ede8] min-w-0">{humanFlag(fix.flag_type)}</span>
+                      <span className="text-xs font-mono text-[#5a8a5a] shrink-0 hidden sm:block max-w-[200px] truncate">{pagePath}</span>
+                      <span className="text-xs font-mono text-[#7ec87e] shrink-0 ml-4 whitespace-nowrap">saves ~{fmtGrams(fixAnnualGrams)}/yr</span>
                       <span className="text-[#3a5a3a] text-xs ml-2 shrink-0">{isOpen ? "▲" : "▼"}</span>
                     </button>
                     {isOpen && (
                       <div className="border-t border-[#1a2a1a] px-5 pb-5 pt-4 space-y-4">
+                        <div className="flex items-center gap-2 text-xs font-mono">
+                          <span className="text-[#3a5a3a]">Page:</span>
+                          <span className="text-[#5a8a5a]">{fix.page_url}</span>
+                        </div>
                         <p className="text-sm text-[#7a9a7a] leading-relaxed">{fix.description}</p>
                         <div className="rounded-lg bg-[#060d06] border border-[#1a2a1a] overflow-hidden">
                           <div className="flex items-center justify-between px-4 py-2 border-b border-[#1a2a1a]">
