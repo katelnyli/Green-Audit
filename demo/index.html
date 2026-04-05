@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eco Demo - Sustainability Blog</title>
+    <!-- Render-blocking stylesheets -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Playfair+Display:wght@700&display=swap">
+    <link rel="stylesheet" href="styles.css">
+    <!-- Render-blocking script -->
+    <script src="https://cdn.jsdelivr.net/npm/analytics@latest/dist/analytics.min.js"></script>
+</head>
+<body>
+    <header>
+        <nav class="navbar">
+            <h1>🌱 Eco Demo</h1>
+            <ul>
+                <li><a href="#about">About</a></li>
+                <li><a href="#blog">Blog</a></li>
+                <li><a href="#products">Products</a></li>
+                <li><a href="#contact">Contact</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main>
+        <!-- Hero Section with Large Unoptimized Images -->
+        <section class="hero">
+            <div class="hero-content">
+                <h2>Building a Sustainable Future</h2>
+                <p>Join us on the journey to reduce carbon emissions and create a greener planet.</p>
+                <button class="cta-button">Get Started</button>
+            </div>
+            <!-- Large unoptimized PNG image -->
+            <img src="hero.svg" 
+                 alt="Hero image" class="hero-image" width="600" height="400">
+        </section>
+
+        <!-- Blog Section with Multiple Images -->
+        <section id="blog" class="blog-section">
+            <h2>Latest Articles</h2>
+            <div class="blog-grid">
+                <article class="blog-post">
+                    <img src="blog1.svg" 
+                         alt="Article 1" class="blog-image" width="400" height="300">
+                    <h3>Solar Energy Revolution</h3>
+                    <p>Discover how solar panels are transforming the energy landscape and reducing carbon footprints worldwide.</p>
+                    <a href="#" class="read-more">Read More</a>
+                </article>
+
+                <article class="blog-post">
+                    <img src="blog2.svg" 
+                         alt="Article 2" class="blog-image" width="400" height="300">
+                    <h3>Zero Waste Living Tips</h3>
+                    <p>Learn practical strategies to minimize waste and live a more sustainable lifestyle.</p>
+                    <a href="#" class="read-more">Read More</a>
+                </article>
+
+                <article class="blog-post">
+                    <img src="blog3.svg" 
+                         alt="Article 3" class="blog-image" width="400" height="300">
+                    <h3>Electric Vehicle Guide</h3>
+                    <p>Everything you need to know about transitioning to electric vehicles for a cleaner commute.</p>
+                    <a href="#" class="read-more">Read More</a>
+                </article>
+            </div>
+        </section>
+
+        <!-- Products Section -->
+        <section id="products" class="products-section">
+            <h2>Our Eco-Friendly Products</h2>
+            <div class="products-grid">
+                <div class="product-card">
+                    <img src="product1.svg" 
+                         alt="Product 1" class="product-image" width="300" height="300">
+                    <h4>Bamboo Utensils Set</h4>
+                    <p class="price">$24.99</p>
+                    <p>Biodegradable and sustainable utensils for on-the-go dining.</p>
+                    <button class="add-cart">Add to Cart</button>
+                </div>
+
+                <div class="product-card">
+                    <img src="product2.svg" 
+                         alt="Product 2" class="product-image" width="300" height="300">
+                    <h4>Reusable Water Bottle</h4>
+                    <p class="price">$34.99</p>
+                    <p>Premium stainless steel bottle keeps drinks hot or cold for 24 hours.</p>
+                    <button class="add-cart">Add to Cart</button>
+                </div>
+
+                <div class="product-card">
+                    <img src="product3.svg" 
+                         alt="Product 3" class="product-image" width="300" height="300">
+                    <h4>Organic Cotton T-Shirt</h4>
+                    <p class="price">$29.99</p>
+                    <p>100% organic cotton with eco-friendly dyes.</p>
+                    <button class="add-cart">Add to Cart</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- About Section -->
+        <section id="about" class="about-section">
+            <h2>About Eco Demo</h2>
+            <p>We're committed to demonstrating sustainable web practices. This website intentionally includes several optimization opportunities to showcase how Green Audit can help reduce carbon emissions.</p>
+            <ul class="features">
+                <li>✓ Unoptimized image formats (PNG instead of WebP)</li>
+                <li>✓ Large render-blocking scripts in the head</li>
+                <li>✓ External font loading that blocks rendering</li>
+                <li>✓ Unused CSS and JavaScript</li>
+                <li>✓ Multiple high-resolution images</li>
+            </ul>
+        </section>
+
+        <!-- Contact Section -->
+        <section id="contact" class="contact-section">
+            <h2>Get In Touch</h2>
+            <form class="contact-form">
+                <input type="text" placeholder="Your Name" required>
+                <input type="email" placeholder="Your Email" required>
+                <textarea placeholder="Your Message" rows="5" required></textarea>
+                <button type="submit" class="submit-btn">Send Message</button>
+            </form>
+        </section>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 Eco Demo. Building a greener web, one page at a time.</p>
+    </footer>
+
+    <!-- Render-blocking scripts at the end (bad practice) -->
+    <script src="https://cdn.jsdelivr.net/npm/tracking@latest/dist/tracking.min.js"></script>
+    <script>
+        // Intentional performance issue: Synchronous script
+        console.log('Page loaded - tracking initialized');
+    </script>
+</body>
+</html>
