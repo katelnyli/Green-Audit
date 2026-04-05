@@ -75,6 +75,37 @@ slow_load_time — pick one:
   • Add resource hints to prefetch the next likely navigation target
   • Add <link rel="modulepreload"> for a critical JS module
 
+no_compression — pick one:
+  • Add nginx gzip/brotli config block enabling compression for html, css, js, json, svg
+  • Add Express/Node.js compression middleware (show the actual require and app.use call)
+  • Add Apache .htaccess mod_deflate or mod_brotli directives
+  • Add Vercel/Netlify config to enable compression (vercel.json or netlify.toml)
+
+missing_cache_headers — pick one:
+  • Add Cache-Control headers for static assets in nginx config (js, css, images)
+  • Add cache headers in Express using res.set() or a middleware, specific to the route
+  • Add <filesMatch> Apache directives for long-lived caching of static assets
+  • Add cache headers in Vercel/Netlify config for the specific asset types
+
+missing_lazy_loading — pick one:
+  • Add loading="lazy" to specific <img> tags found on the page (show the actual tags)
+  • Add fetchpriority="high" to the above-fold LCP image and loading="lazy" to the rest
+  • Replace manual img tags with a lazy-loading IntersectionObserver wrapper component
+  • Add decoding="async" alongside loading="lazy" to the images
+
+large_inline_script — pick one:
+  • Extract the inline script to an external .js file and replace with <script src="...">
+  • Move the inline script to the bottom of <body> and add defer logic
+  • Split the inline script — keep only the critical initialization inline, move the rest out
+  • Minify the inline script using a build tool config (show the relevant config)
+
+third_party_heavy — pick one:
+  • Load a specific analytics script (by its actual URL) only after user interaction using an event listener
+  • Replace a specific third-party widget with a self-hosted or lighter alternative
+  • Add a Partytown config to run third-party scripts in a web worker (show actual setup)
+  • Consolidate tracking pixels by using a tag manager instead of individual script tags
+  • Lazy-load a specific third-party script after the page's load event fires
+
 The console_script must:
 - Be a clean, readable, non-destructive script using real DOM selectors from the page
 - Demonstrate the fix visually (e.g. show what an image would look like lazy-loaded, log what a deferred script tag would look like)
@@ -326,8 +357,8 @@ def _estimate_bytes_saved_at_size(flag: Flag, page: Page, current_bytes: int) ->
 
     if flag.type == "oversized_page":
         over_budget = max(total - _PAGE_BUDGET_BYTES, 0)
-        estimated = over_budget * 0.70
-        return _clamp_bytes(estimated, total, upper_ratio=0.70)
+        estimated = over_budget * 0.50
+        return _clamp_bytes(estimated, total, upper_ratio=0.40)
 
     if flag.type == "high_request_count":
         removable_requests = max(page.request_count - 80, 0)
@@ -348,6 +379,34 @@ def _estimate_bytes_saved_at_size(flag: Flag, page: Page, current_bytes: int) ->
         blocking_bytes = sum(s.size_bytes for s in page.resources.scripts if s.render_blocking)
         estimated = (heavy_image_bytes * 0.20) + (blocking_bytes * 0.10)
         return _clamp_bytes(estimated, total, upper_ratio=0.25)
+
+    if flag.type == "no_compression":
+        # Compression reduces text payloads (HTML/CSS/JS) by ~60-80%, but images dominate
+        # page weight and are unaffected — realistic overall saving is ~15% of total transfer
+        estimated = total * 0.15
+        return _clamp_bytes(estimated, total, upper_ratio=0.20)
+
+    if flag.type == "missing_cache_headers":
+        # Cache headers only help repeat visitors for static assets (~30% of visits)
+        estimated = total * 0.12
+        return _clamp_bytes(estimated, total, upper_ratio=0.15)
+
+    if flag.type == "missing_lazy_loading":
+        # Lazy loading defers below-fold images; estimate 30% of image weight
+        image_bytes = sum(img.size_bytes for img in page.resources.images)
+        estimated = image_bytes * 0.30
+        return _clamp_bytes(estimated, total, upper_ratio=0.30)
+
+    if flag.type == "large_inline_script":
+        # Extracting + caching inline scripts saves on repeat visits
+        estimated = total * 0.08
+        return _clamp_bytes(estimated, total, upper_ratio=0.15)
+
+    if flag.type == "third_party_heavy":
+        # Deferring/removing third-party scripts; estimate 20% of script weight
+        script_bytes = sum(s.size_bytes for s in page.resources.scripts)
+        estimated = script_bytes * 0.20
+        return _clamp_bytes(estimated, total, upper_ratio=0.20)
 
     return _clamp_bytes(total * 0.05, total, upper_ratio=0.10)
 

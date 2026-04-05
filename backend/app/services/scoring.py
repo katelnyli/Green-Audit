@@ -27,6 +27,11 @@ def generate_flags(
     request_count: int,
     load_time_ms: int,
     resources: Resources,
+    has_compression: bool = True,
+    cache_max_age: int = 86400,
+    lazy_loadable_images: int = 0,
+    inline_script_bytes: int = 0,
+    third_party_domains: int = 0,
 ) -> list[Flag]:
     flags: list[Flag] = []
 
@@ -86,6 +91,43 @@ def generate_flags(
             impact="medium",
         ))
 
+    if not has_compression:
+        flags.append(Flag(
+            type="no_compression",
+            detail="Response served without gzip/brotli — enable compression to reduce transfer size",
+            impact="high",
+        ))
+
+    if cache_max_age < 3600:
+        age = f"max-age={cache_max_age}" if cache_max_age > 0 else "no cache headers"
+        flags.append(Flag(
+            type="missing_cache_headers",
+            detail=f"Page served with {age} — set long-lived Cache-Control for static assets",
+            impact="medium",
+        ))
+
+    if lazy_loadable_images >= 3:
+        flags.append(Flag(
+            type="missing_lazy_loading",
+            detail=f"{lazy_loadable_images} images lack loading=\"lazy\" — defer below-fold images",
+            impact="medium",
+        ))
+
+    if inline_script_bytes > 30_000:
+        kb = round(inline_script_bytes / 1000)
+        flags.append(Flag(
+            type="large_inline_script",
+            detail=f"{kb}KB of inline JavaScript — extract to external file for caching",
+            impact="medium",
+        ))
+
+    if third_party_domains >= 3:
+        flags.append(Flag(
+            type="third_party_heavy",
+            detail=f"{third_party_domains} third-party script domains — each adds a DNS lookup and connection overhead",
+            impact="medium",
+        ))
+
     return flags
 
 
@@ -96,6 +138,11 @@ def assemble_page(raw: dict, lh: LighthouseScores) -> Page:
         request_count=raw["request_count"],
         load_time_ms=raw["load_time_ms"],
         resources=resources,
+        has_compression=raw.get("has_compression", True),
+        cache_max_age=raw.get("cache_max_age", 86400),
+        lazy_loadable_images=raw.get("lazy_loadable_images", 0),
+        inline_script_bytes=raw.get("inline_script_bytes", 0),
+        third_party_domains=raw.get("third_party_domains", 0),
     )
     co2 = estimate_co2(raw["transfer_size_bytes"])
     section = _detect_section(raw["url"])

@@ -199,6 +199,34 @@ async def _measure_page(url: str) -> dict:
     # Count all outbound resource requests the browser would make
     request_count = 1 + len(images) + len(scripts) + len(fonts) + stylesheet_count
 
+    # ── Extra signals for additional flag types ───────────────────────────────
+    encoding = resp.headers.get("content-encoding", "")
+    has_compression = any(enc in encoding.lower() for enc in ("gzip", "br", "zstd", "deflate"))
+
+    cache_control = resp.headers.get("cache-control", "")
+    cache_max_age = 0
+    ma = re.search(r"max-age=(\d+)", cache_control)
+    if ma:
+        cache_max_age = int(ma.group(1))
+
+    lazy_loadable_images = sum(
+        1 for m in re.finditer(r'<img([^>]*)>', html, re.I)
+        if "loading=" not in m.group(1).lower()
+    )
+
+    inline_script_bytes = sum(
+        len(m.group(1))
+        for m in re.finditer(r'<script(?:[^>]*)>([^<]{200,})</script>', html, re.I | re.S)
+        if not re.search(r'src=["\']', m.group(0), re.I)
+    )
+
+    page_domain = urlparse(url).hostname or ""
+    third_party_domains = len({
+        urlparse(s["url"]).hostname
+        for s in scripts
+        if urlparse(s["url"]).hostname and urlparse(s["url"]).hostname != page_domain
+    })
+
     return {
         "url": url,
         "load_time_ms": load_ms,
@@ -206,6 +234,12 @@ async def _measure_page(url: str) -> dict:
         "request_count": request_count,
         "resources": {"images": images, "scripts": scripts, "fonts": fonts, "other": []},
         "dom_context": _dom_context(html, url),
+        # extra signals
+        "has_compression": has_compression,
+        "cache_max_age": cache_max_age,
+        "lazy_loadable_images": lazy_loadable_images,
+        "inline_script_bytes": inline_script_bytes,
+        "third_party_domains": third_party_domains,
     }
 
 
