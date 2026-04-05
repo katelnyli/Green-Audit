@@ -167,7 +167,7 @@ export default function ReportView({ result }: { result: AuditResult }) {
         {fixes.length > 0 && (
           <div>
             <div className="text-xs font-mono uppercase text-[#404040] mb-4 tracking-wider">
-              AI-Generated Code Fixes — ranked by impact
+              Code Fixes — ranked by impact
             </div>
             <div className="space-y-2">
               {sortedFixes.map(({ fix, i }) => {
