@@ -53,35 +53,6 @@ export default function Home() {
                 />
               </div>
 
-              {/* Collapsible Credentials */}
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setShowCredentials(!showCredentials)}
-                  className="text-[#7ec87e] text-sm hover:underline"
-                >
-                  {showCredentials ? "− Hide" : "+ Add"} login credentials
-                </button>
-                {showCredentials && (
-                  <div className="mt-4 space-y-3">
-                    <input
-                      type="text"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      placeholder="Username"
-                      className="w-full px-4 py-3 bg-[#0a0f0a] border border-[#1a2a1a] rounded text-[#ededed] placeholder:text-[#606060] focus:outline-none focus:border-[#7ec87e]"
-                    />
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Password"
-                      className="w-full px-4 py-3 bg-[#0a0f0a] border border-[#1a2a1a] rounded text-[#ededed] placeholder:text-[#606060] focus:outline-none focus:border-[#7ec87e]"
-                    />
-                  </div>
-                )}
-              </div>
-
               {error && (
                 <div className="text-[#ff6b6b] text-sm">{error}</div>
               )}
@@ -115,7 +86,7 @@ export default function Home() {
           {/* Impact Statement */}
           <div className="mt-16 border-l-[3px] border-[#7ec87e] pl-10 py-8">
             <p className="text-[28px] leading-tight text-[#ededed] font-mono mb-6">
-              &ldquo;By optimizing just 10% of the top 1,000 websites&apos; checkout flows, we could save the equivalent energy of powering <span className="text-[#7ec87e]">10,000 homes</span> for a year.&rdquo;
+              &ldquo;By optimizing just 10% of the top 1,000 websites&apos; checkout flows, we could save the equivalent energy of powering <span className="text-[#7ec87e]">10,000 homes </span> for a year.&rdquo;
             </p>
             <p className="text-base text-[#a0a0a0] mb-6">
               We aren&apos;t just cleaning up code. We&apos;re decarbonizing the digital economy.
