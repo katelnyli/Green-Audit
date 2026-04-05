@@ -10,6 +10,7 @@ export default function Home() {
   const [showCredentials, setShowCredentials] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [maxPages, setMaxPages] = useState(10);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -19,7 +20,7 @@ export default function Home() {
     setLoading(true);
     try {
       const creds = showCredentials && username ? { username, password } : undefined;
-      const { audit_id } = await startAudit(url, creds);
+      const { audit_id } = await startAudit(url, creds, maxPages);
       router.push(`/progress?audit_id=${audit_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start audit");

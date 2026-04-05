@@ -1,12 +1,6 @@
 """
 Crawler: browser-use-sdk for live preview + autonomous URL discovery,
          httpx for per-page metrics.
-
-Strategy for demo reliability:
-  - 3 parallel browser-use agents explore the site concurrently
-  - Stop collecting as soon as we have MAX_PAGES total across all agents
-  - First agent's live_url shown in the iframe
-  - httpx measures real transfer size and load time for every discovered URL
 """
 
 from __future__ import annotations
@@ -23,22 +17,23 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-MAX_PAGES = 10         # total pages to collect across all agents
-NUM_AGENTS = 3         # parallel browser-use agents
-POLL_INTERVAL = 3.0    # seconds between browser-use step polls
-CRAWL_TIMEOUT = 240    # bail out after 4 min regardless
+MAX_PAGES = 10
+POLL_INTERVAL = 3.0
+CRAWL_TIMEOUT = 240
 
 _PROMPT = (
-    "You are auditing a website for a sustainability report. "
-    "You are starting at {start_url}. Explore this section and follow links to nearby pages. "
+    "You are a person casually browsing {url}. "
+    "Act like a real user: start on the homepage, read what's there, then click on links that look interesting — "
+    "product pages, blog posts, about sections, navigation items. Explore naturally across different parts of the site. "
     "Stay on the same domain ({domain}). "
-    "Do not fill in forms, log in, or click external links."
+    "Do not fill in forms, create accounts, log in, or make purchases."
 )
 
 
 async def crawl(
     url: str,
     credentials: dict | None,
+    max_pages: int = MAX_PAGES,
     on_live_url: Callable[[str], None] | None = None,
     on_agent_live_url: Callable[[int, str], None] | None = None,
     on_page_discovered: Callable[[str], None] | None = None,
@@ -52,100 +47,68 @@ async def crawl(
     client = AsyncBrowserUse(api_key=api_key)
     domain = urlparse(url).hostname or urlparse(url).netloc
 
-    # Pre-crawl homepage with httpx to get distinct nav links for each agent
-    nav_links = await _get_nav_links(url, domain, NUM_AGENTS - 1)
-    agent_start_urls = [url] + nav_links
-    while len(agent_start_urls) < NUM_AGENTS:
-        agent_start_urls.append(url)
-    logger.info("agent start URLs: %s", agent_start_urls)
-
-    # Shared state across agents (protected by asyncio single-thread)
     discovered: list[str] = []
     seen: set[str] = set()
 
-    def _register(raw_url: str) -> bool:
-        """Returns True if this was a new URL. Thread-safe in asyncio."""
+    def _register(raw_url: str) -> None:
         normed = raw_url.rstrip("/")
         host = urlparse(normed).hostname or ""
         same_site = host == domain or host.endswith("." + domain)
-        if normed and normed not in seen and same_site and len(discovered) < MAX_PAGES:
+        if normed and normed not in seen and same_site and len(discovered) < max_pages:
             seen.add(normed)
             discovered.append(normed)
             logger.info("discovered: %s", normed)
             if on_page_discovered:
                 on_page_discovered(normed)
-            return True
-        return False
 
-    _register(url)  # homepage is page #1
+    _register(url)
 
-    # ── Launch all agents concurrently ────────────────────────────────────────
-    async def run_agent(agent_idx: int) -> None:
-        start_url = agent_start_urls[agent_idx]
-        prompt = _PROMPT.format(start_url=start_url, domain=domain)
+    prompt = _PROMPT.format(url=url, domain=domain)
+    task_resp = await client.tasks.create(task=prompt, start_url=url, max_steps=40)
+    task_id = str(task_resp.id)
+    session_id = str(task_resp.session_id)
+    logger.info("task=%s session=%s", task_id, session_id)
+
+    def _live_cb(lurl: str) -> None:
+        if on_live_url:
+            on_live_url(lurl)
+        if on_agent_live_url:
+            on_agent_live_url(0, lurl)
+
+    live_url_task = asyncio.create_task(_fetch_live_url(client, session_id, _live_cb))
+
+    seen_steps = 0
+    deadline = time.monotonic() + CRAWL_TIMEOUT
+
+    while time.monotonic() < deadline and len(discovered) < max_pages:
+        await asyncio.sleep(POLL_INTERVAL)
         try:
-            task_resp = await client.tasks.create(
-                task=prompt,
-                start_url=start_url,
-                max_steps=40,
-            )
+            task_view = await client.tasks.get(task_id)
         except Exception as e:
-            logger.warning("agent %d failed to start: %s", agent_idx, e)
-            return
+            logger.warning("poll failed: %s", e)
+            continue
 
-        task_id = str(task_resp.id)
-        session_id = str(task_resp.session_id)
-        logger.info("agent=%d task=%s session=%s", agent_idx, task_id, session_id)
+        new_steps = task_view.steps[seen_steps:]
+        for step in new_steps:
+            if step.url:
+                _register(step.url)
+        if new_steps and on_agent_status:
+            on_agent_status(new_steps[-1].next_goal)
+        seen_steps = len(task_view.steps)
 
-        # Each agent fetches its own live_url; agent 0 also fires the legacy on_live_url callback
-        def _make_live_cb(idx: int):
-            def _cb(lurl: str) -> None:
-                if on_agent_live_url:
-                    on_agent_live_url(idx, lurl)
-                if idx == 0 and on_live_url:
-                    on_live_url(lurl)
-            return _cb
+        if task_view.status.value in ("finished", "stopped", "failed"):
+            break
 
-        # Keep a reference so we can wait for it before stopping the session
-        live_url_task = asyncio.create_task(
-            _fetch_live_url(client, session_id, _make_live_cb(agent_idx))
-        )
-
-        seen_steps = 0
-        deadline = time.monotonic() + CRAWL_TIMEOUT
-
-        while time.monotonic() < deadline and len(discovered) < MAX_PAGES:
-            await asyncio.sleep(POLL_INTERVAL)
-            try:
-                task_view = await client.tasks.get(task_id)
-            except Exception as e:
-                logger.warning("agent %d poll failed: %s", agent_idx, e)
-                continue
-
-            new_steps = task_view.steps[seen_steps:]
-            for step in new_steps:
-                if step.url:
-                    _register(step.url)
-            if new_steps and on_agent_status:
-                on_agent_status(f"[Agent {agent_idx + 1}] {new_steps[-1].next_goal}")
-            seen_steps = len(task_view.steps)
-
-            if task_view.status.value in ("finished", "stopped", "failed"):
-                break
-
-        # Wait for live_url before stopping — stopping kills the session
-        if not live_url_task.done():
-            try:
-                await asyncio.wait_for(asyncio.shield(live_url_task), timeout=10)
-            except (asyncio.TimeoutError, Exception):
-                live_url_task.cancel()
-
+    if not live_url_task.done():
         try:
-            await client.tasks.stop(task_id)
-        except Exception:
-            pass
+            await asyncio.wait_for(asyncio.shield(live_url_task), timeout=30)
+        except (asyncio.TimeoutError, Exception):
+            live_url_task.cancel()
 
-    await asyncio.gather(*[run_agent(i) for i in range(NUM_AGENTS)], return_exceptions=True)
+    try:
+        await client.tasks.stop(task_id)
+    except Exception:
+        pass
 
     if not discovered:
         discovered = [url.rstrip("/")]
@@ -194,7 +157,7 @@ async def _fetch_live_url(client, session_id: str, on_live_url: Callable[[str], 
     """Retry getting live_url for up to 30s without blocking the crawl."""
     if not on_live_url:
         return
-    for delay in (1, 2, 2, 2, 3):
+    for delay in (1, 2, 2, 3, 3, 4, 5, 5, 5):
         await asyncio.sleep(delay)
         try:
             session = await client.sessions.get(session_id)

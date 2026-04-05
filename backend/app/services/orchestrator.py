@@ -17,7 +17,8 @@ async def run_full_audit(
     audit_id: str,
     url: str,
     credentials: dict | None,
-    on_progress: Callable[[str, int, int, str], None],
+    max_pages: int = 10,
+    on_progress: Callable[[str, int, int, str], None] = lambda *_: None,
     on_live_url: Callable[[str], None] | None = None,
     on_agent_live_url: Callable[[int, str], None] | None = None,
     on_page_discovered: Callable[[str], None] | None = None,
@@ -30,6 +31,7 @@ async def run_full_audit(
     raw_pages = await crawl(
         url,
         credentials,
+        max_pages=max_pages,
         on_live_url=on_live_url,
         on_agent_live_url=on_agent_live_url,
         on_page_discovered=on_page_discovered,

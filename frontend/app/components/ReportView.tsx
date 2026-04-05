@@ -20,6 +20,11 @@ function fmt(bytes: number) {
   return `${(bytes / 1_000).toFixed(0)} KB`;
 }
 
+function safePct(numerator: number, denominator: number): number {
+  if (!denominator || !isFinite(denominator)) return 0;
+  return (numerator / denominator) * 100;
+}
+
 export default function ReportView({ result }: { result: AuditResult }) {
   const { summary, pages, fixes } = result;
   const [selectedFixes, setSelectedFixes] = useState<Set<number>>(
@@ -38,23 +43,22 @@ export default function ReportView({ result }: { result: AuditResult }) {
     (sum, idx) => sum + fixes[idx].estimated_co2_saved,
     0
   );
-  const baselineCO2 = Math.max(summary.total_estimated_co2_grams, 0.000001);
-  
-  const potentialReductionPct = (totalPotentialSavings / baselineCO2) * 100;
-  const selectedReductionPct = (selectedSavings / baselineCO2) * 100;
-
   // Calculate average performance score
   const avgPerformance = pages.length > 0
     ? Math.round(pages.reduce((sum, p) => sum + p.lighthouse.performance, 0) / pages.length)
     : 0;
 
+  // Annual CO₂ projection at 1,000 daily visitors
+  const avgCo2PerPage = summary.total_pages_crawled > 0
+    ? summary.total_estimated_co2_grams / summary.total_pages_crawled
+    : 0;
+  const annualCo2Kg = (avgCo2PerPage * 1_000 * 365) / 1_000_000; // grams → kg
+
   // Calculate "after" stats
-  const cappedAfterCO2 = Math.max(summary.total_estimated_co2_grams - selectedSavings, 0);
-  const cappedAfterTransfer = Math.max(
-    summary.total_transfer_bytes - Math.round(summary.total_transfer_bytes * (selectedSavings / baselineCO2)),
-    0
-  );
-  const afterPerformance = Math.min(100, avgPerformance + Math.round((selectedSavings / baselineCO2) * 30));
+  const co2Total = summary.total_estimated_co2_grams || 1; // guard division by zero
+  const afterCO2 = summary.total_estimated_co2_grams - selectedSavings;
+  const afterAnnualCo2Kg = ((avgCo2PerPage - selectedSavings / (summary.total_pages_crawled || 1)) * 1_000 * 365) / 1_000_000;
+  const afterPerformance = Math.min(100, avgPerformance + Math.round(safePct(selectedSavings, co2Total) * 0.3));
 
   const toggleFix = (idx: number) => {
     setSelectedFixes((prev) => {
@@ -184,7 +188,7 @@ export default function ReportView({ result }: { result: AuditResult }) {
                 {totalPotentialSavings.toFixed(4)}g
               </div>
               <div className="text-xs text-[#2a4a2a] mt-1">
-                {potentialReductionPct.toFixed(2)}% reduction
+                {safePct(totalPotentialSavings, co2Total).toFixed(0)}% reduction
               </div>
             </div>
           )}
@@ -292,11 +296,11 @@ export default function ReportView({ result }: { result: AuditResult }) {
                 <div className="text-4xl font-mono font-bold text-[#7ec87e] mb-2">
                   {previewMode === "before"
                     ? summary.total_estimated_co2_grams.toFixed(4)
-                    : cappedAfterCO2.toFixed(4)}g
+                    : afterCO2.toFixed(4)}g
                 </div>
                 {previewMode === "after" && selectedSavings > 0 && (
                   <div className="text-xs font-mono text-[#7ec87e]">
-                    ↓ {selectedReductionPct.toFixed(2)}% reduction
+                    ↓ {safePct(selectedSavings, co2Total).toFixed(0)}% reduction
                   </div>
                 )}
               </div>
@@ -315,17 +319,18 @@ export default function ReportView({ result }: { result: AuditResult }) {
                 )}
               </div>
 
-              {/* Transfer Size */}
+              {/* Annual CO₂ projection */}
               <div className="bg-[#0a0f0a] border border-[#1a2a1a] rounded-lg p-6 text-center">
-                <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-3">Transfer Size</div>
+                <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-3">Annual CO₂</div>
                 <div className="text-4xl font-mono font-bold text-[#7ec87e] mb-2">
                   {previewMode === "before"
-                    ? fmt(summary.total_transfer_bytes)
-                    : fmt(cappedAfterTransfer)}
+                    ? `${annualCo2Kg.toFixed(1)} kg`
+                    : `${Math.max(0, afterAnnualCo2Kg).toFixed(1)} kg`}
                 </div>
-                {previewMode === "after" && cappedAfterTransfer < summary.total_transfer_bytes && (
-                  <div className="text-xs font-mono text-[#7ec87e]">
-                    ↓ {fmt(summary.total_transfer_bytes - cappedAfterTransfer)} saved
+                <div className="text-xs font-mono text-[#4a6a4a]">at 1k daily visitors</div>
+                {previewMode === "after" && afterAnnualCo2Kg < annualCo2Kg && (
+                  <div className="text-xs font-mono text-[#7ec87e] mt-1">
+                    ↓ {(annualCo2Kg - Math.max(0, afterAnnualCo2Kg)).toFixed(1)} kg/yr saved
                   </div>
                 )}
               </div>
@@ -348,12 +353,12 @@ export default function ReportView({ result }: { result: AuditResult }) {
                   <div>
                     <div className="flex justify-between text-xs font-mono mb-2">
                       <span className="text-[#4a6a4a]">After</span>
-                      <span className="text-[#7ec87e]">{cappedAfterCO2.toFixed(4)}g</span>
+                      <span className="text-[#7ec87e]">{afterCO2.toFixed(4)}g</span>
                     </div>
                     <div className="h-3 bg-[#0f1a0f] rounded-full overflow-hidden">
                       <div
                         className="h-full bg-[#7ec87e]"
-                        style={{ width: `${(cappedAfterCO2 / baselineCO2) * 100}%` }}
+                        style={{ width: `${safePct(afterCO2, co2Total)}%` }}
                       />
                     </div>
                   </div>
@@ -429,7 +434,7 @@ export default function ReportView({ result }: { result: AuditResult }) {
               <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-3">CO₂ by Section</div>
               <div className="space-y-2">
                 {summary.sections_ranked.map((section, i) => {
-                  const pct = (section.co2_grams / summary.total_estimated_co2_grams) * 100;
+                  const pct = safePct(section.co2_grams, co2Total);
                   const color = pct > 40 ? "#c87e7e" : pct > 20 ? "#c8a87e" : "#7ea87e";
                   return (
                     <div key={i}>
