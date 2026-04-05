@@ -15,6 +15,7 @@ export default function Progress() {
   const [activeAgent, setActiveAgent] = useState(0);
   const [blockedAgents, setBlockedAgents] = useState<boolean[]>([false, false, false]);
   const [isTerminating, setIsTerminating] = useState(false);
+  const [iframeBlocked, setIframeBlocked] = useState(false);
   const pagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

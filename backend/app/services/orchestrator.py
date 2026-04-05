@@ -24,6 +24,7 @@ async def run_full_audit(
     on_page_discovered: Callable[[str], None] | None = None,
     on_agent_status: Callable[[str], None] | None = None,
     on_pages_scored: Callable[[list[Page]], None] | None = None,
+    should_stop_after_scoring: Callable[[], bool] | None = None,
 ) -> AuditResult:
     from app.crawler.client import crawl
 
@@ -58,6 +59,18 @@ async def run_full_audit(
     # Save intermediate result so early termination shows data
     if on_pages_scored:
         on_pages_scored(pages)
+    
+    # Check if user requested termination after scoring
+    if should_stop_after_scoring and should_stop_after_scoring():
+        # Return early without generating fixes
+        return AuditResult(
+            audit_id=audit_id,
+            target_url=url,
+            crawled_at=datetime.now(timezone.utc).isoformat(),
+            pages=pages,
+            summary=summary,
+            fixes=[],  # No fixes since we're stopping early
+        )
 
     # ── Phase 3: generate code fixes for all pages concurrently ──────────────
     on_progress("generating_fixes", 0, total, url)

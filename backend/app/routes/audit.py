@@ -32,24 +32,15 @@ async def get_audit(audit_id: str):
 
 @router.post("/{audit_id}/terminate")
 async def terminate_audit(audit_id: str):
-    """Terminate a running audit and return whatever data was collected."""
+    """Mark audit for early termination after scoring all discovered pages."""
     job = _jobs.get(audit_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Audit not found")
     
-    # Cancel the task if it's still running
-    task = _tasks.get(audit_id)
-    if task and not task.done():
-        task.cancel()
-        _tasks.pop(audit_id, None)
+    # Set a flag to stop fix generation but let scoring complete
+    job.terminate_requested = True  # type: ignore[attr-defined]
     
-    # Mark as done immediately so report page can access whatever we have
-    job.status = "done"
-    
-    # If a result was already partially generated, keep it
-    # Otherwise just return the status which has pages_discovered and current_url
-    
-    return {"status": "terminated", "audit_id": audit_id}
+    return {"status": "terminating", "audit_id": audit_id}
 
 
 @router.get("/{audit_id}/stream")
@@ -93,6 +84,7 @@ async def _run_audit(audit_id: str, url: str, credentials: dict | None, max_page
             on_page_discovered=lambda page_url: _add_discovered_page(audit_id, page_url),
             on_agent_status=lambda status: _set_agent_status(audit_id, status),
             on_pages_scored=lambda pages: _save_intermediate_result(audit_id, url, pages),
+            should_stop_after_scoring=lambda: _jobs.get(audit_id) and getattr(_jobs[audit_id], 'terminate_requested', False),
         )
         job = _jobs[audit_id]
         job.status = "done"
