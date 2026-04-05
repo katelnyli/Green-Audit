@@ -54,20 +54,79 @@ export default function ReportView({ result }: { result: AuditResult }) {
 
   const exportPatch = () => {
     const domain = new URL(result.target_url).hostname;
-    const date = new Date().toISOString().split("T")[0];
-    let patch = `=== GREEN AUDIT PATCH — ${domain} ===\nGenerated: ${date}\n\n`;
+    const timestamp = new Date().toISOString();
+    const date = timestamp.split("T")[0];
 
-    selectedFixes.forEach((idx) => {
+    // Build GTM tags from selected fixes
+    const tags: any[] = [];
+    const usedTagNames = new Set<string>();
+    selectedFixes.forEach((idx, tagId) => {
       const fix = fixes[idx];
-      const impact = summary.top_flags.find(f => f.type === fix.flag_type)?.impact || "medium";
-      patch += `[${impact.toUpperCase()}] ${fix.page_url}\n${fix.description}\n${fix.code_snippet}\n\n`;
+      const rawPath = new URL(fix.page_url).pathname || "/";
+      const normalizedPath = rawPath === "/" ? "home" : rawPath.replace(/^\//, "").replace(/\//g, "-");
+      const baseName = `${fix.flag_type} - ${normalizedPath}`;
+      let uniqueName = baseName;
+      let suffix = 2;
+      while (usedTagNames.has(uniqueName)) {
+        uniqueName = `${baseName} (${suffix})`;
+        suffix += 1;
+      }
+      usedTagNames.add(uniqueName);
+      
+      tags.push({
+        tagId: String(tagId + 1),
+        name: uniqueName,
+        type: "html",
+        parameter: [
+          {
+            type: "TEMPLATE",
+            key: "html",
+            value: fix.injection_js || fix.code_snippet
+          }
+        ],
+        firingTriggerId: ["1"]
+      });
     });
 
-    const blob = new Blob([patch], { type: "text/plain" });
+    // Build GTM container export
+    const gtmExport = {
+      exportFormatVersion: 2,
+      exportTime: timestamp,
+      containerVersion: {
+        name: `Green Audit - ${domain}`,
+        container: {
+          name: `Green Audit GTM - ${domain}`,
+          publicId: `GTM-${domain.replace(/\./g, '-').toUpperCase()}`,
+          usageContext: ["WEB"]
+        },
+        tag: tags,
+        trigger: [
+          {
+            name: "All Pages",
+            type: "PAGEVIEW",
+            triggerId: "1"
+          }
+        ],
+        variable: [],
+        folder: [],
+        builtInVariable: []
+      },
+      metadata: {
+        domain,
+        auditId: result.audit_id,
+        auditUrl: result.target_url,
+        generatedAt: timestamp,
+        totalFixes: selectedFixes.size,
+        avgCO2: summary.total_estimated_co2_grams / summary.total_pages_crawled,
+        grade: summary.grade
+      }
+    };
+
+    const blob = new Blob([JSON.stringify(gtmExport, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `green-audit-${domain}-${date}.txt`;
+    a.download = `green-audit-gtm-${domain}-${date}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
