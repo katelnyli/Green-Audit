@@ -75,9 +75,6 @@ export default function ReportView({ result }: { result: AuditResult }) {
 
   const afterCo2Grams    = Math.max(1, annualCo2Grams * (1 - savingsPct / 100));
   const afterTreesNeeded = Math.max(1, Math.ceil(afterCo2Grams / TREE_GRAMS));
-  const afterAvgCo2      = avgCo2PerPage * (1 - savingsPct / 100);
-  const currentGrade     = (summary.grade ?? co2Grade(avgCo2PerPage)) as GradeKey;
-  const afterGrade       = co2Grade(afterAvgCo2) as GradeKey;
 
   const domain = (() => { try { return new URL(result.target_url).hostname; } catch { return result.target_url; } })();
 
@@ -142,7 +139,7 @@ export default function ReportView({ result }: { result: AuditResult }) {
           <div className="glass-card rounded-xl p-6">
             <div className="text-xs font-mono uppercase text-[#404040] mb-5 tracking-wider">Current State</div>
             <div className="space-y-2.5">
-              <Stat label="Annual CO₂" value={fmtKg(annualCo2Kg)} color="#c8a87e" />
+              <Stat label="Annual CO₂" value={fmtGrams(annualCo2Grams)} color="#c8a87e" />
               <Stat label="Trees to offset" value={`${treesNeeded} trees/yr`} color="#c8a87e" />
               <Stat label="Total transfer" value={fmt(summary.total_transfer_bytes)} color="#7ec87e" />
               {showPerf && <Stat label="Avg performance" value={`${avgPerf}/100`} color={avgPerf >= 70 ? "#7ec87e" : avgPerf >= 50 ? "#c8a87e" : "#c87e7e"} />}
