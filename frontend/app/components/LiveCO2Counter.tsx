@@ -8,10 +8,16 @@ interface Props {
 }
 
 export default function LiveCO2Counter({ value, baseline }: Props) {
-  const [displayed, setDisplayed] = useState(value);
+  const [displayed, setDisplayed] = useState<number | null>(null);
   const prevRef = useRef(value);
 
   useEffect(() => {
+    if (displayed === null) {
+      setDisplayed(value);
+      prevRef.current = value;
+      return;
+    }
+
     const start = prevRef.current;
     const end = value;
     if (start === end) return;
@@ -34,6 +40,17 @@ export default function LiveCO2Counter({ value, baseline }: Props) {
 
   const saved = baseline - value;
   const pctSaved = baseline > 0 ? Math.round((saved / baseline) * 100) : 0;
+
+  if (displayed === null) {
+    return (
+      <div className="text-center">
+        <p className="text-5xl font-bold tabular-nums text-[#7ec87e] font-sans">
+          {value.toFixed(2)}
+          <span className="text-2xl font-normal text-[#4a6a4a] ml-1">gCO₂</span>
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="text-center">

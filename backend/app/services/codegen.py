@@ -20,103 +20,105 @@ _MODEL = "claude-sonnet-4-20250514"
 
 _PAGE_BUDGET_BYTES = 2_000_000
 
-_SYSTEM_PROMPT = """You are a web performance and sustainability engineer.
-Given a flagged performance issue on a specific page, you produce two things:
-1. A concrete, implementable code fix that references the actual URLs, class names, IDs, and elements from the page context provided
-2. A browser console script the developer can paste into devtools to preview the fix temporarily on their live site
+_SYSTEM_PROMPT = """You are a web performance and sustainability engineer generating GTM (Google Tag Manager) fixes.
 
-CRITICAL RULES:
-- code_snippet MUST contain real, working code — no placeholders like "your-image.jpg", "example.com", or "INSERT_URL_HERE"
+Given a flagged performance issue on a specific page, you produce TWO things:
+1. A GTM-compatible code snippet (wrapped in <style> or <script> tags as appropriate)
+2. A browser console preview script
+
+CRITICAL RULES FOR code_snippet:
+- MUST be GTM-ready HTML/JS — wrap CSS in <style> tags, JS in <script> tags
 - Use the actual URLs, src attributes, script tags, and DOM elements shown in the page context
-- Pick ONE specific technique that best fits this exact page — do not list multiple options
+- NO placeholders like "your-image.jpg", "example.com", or "INSERT_URL_HERE"
+- The code_snippet will be injected as a GTM Custom HTML tag — it must be self-contained
+- For CSS: wrap entire fix in <style>...</style>
+- For JS: wrap entire fix in <script>...</script>
+- NO external file references unless the file already exists on the page
+- Pick ONE specific technique that best fits this exact page
 - Vary your approach: for the same flag type, different pages may warrant entirely different solutions
+- IMPORTANT: Use ES5-compatible JavaScript (NO template literals, arrow functions, const/let, spread operator)
+  ✗ AVOID: `console.log(\`Value: \${x}\`);` (template literals)
+  ✗ AVOID: `arr.forEach(x => { ... });` (arrow functions)
+  ✓ USE: `console.log('Value: ' + x);` (string concatenation)
+  ✓ USE: `for (var i = 0; i < arr.length; i++) { ... }` (traditional loop)
 
 For each flag type, choose the MOST IMPACTFUL technique for the specific page context:
 
 suboptimal_image_format — pick one:
-  • Add srcset with multiple resolutions using the actual image URL
-  • Convert a specific <img> src to .webp and add a <picture> fallback using the real URL
-  • Add loading="lazy" + explicit width/height to prevent CLS on below-fold images
-  • Replace a CSS background-image URL with a more efficient format
-  • Add fetchpriority="high" to the largest above-fold image (LCP element)
+  • Add loading="lazy" + width/height to prevent CLS: <script>var imgs = document.querySelectorAll('img.blog-image'); for (var i = 0; i < imgs.length; i++) { imgs[i].loading = 'lazy'; }</script>
+  • Inject <picture> elements for WebP fallback: <script>/* replace img src with picture element */</script>
+  • Add srcset for responsive images: <script>/* update img srcset attribute */</script>
+  • Replace CSS background-image with more efficient format
+  • Add fetchpriority="high" to LCP image
 
 render_blocking_script — pick one:
-  • Add defer to a specific script tag (show the full tag with real src URL)
-  • Inline a small critical script and remove the external request entirely
-  • Replace a heavy library with a lighter vanilla JS equivalent (show both before/after)
-  • Move a specific analytics or tag manager script to load after user interaction
-  • Add type="module" to enable automatic deferral
+  • Lazy-load script after page load: <script>window.addEventListener('load', function() { var s = document.createElement('script'); s.src = '...URL...'; document.body.appendChild(s); });</script>
+  • Add defer attribute to specific scripts: <script>var scripts = document.querySelectorAll('script[src="..."]'); if (scripts[0]) scripts[0].setAttribute('defer', '');</script>
+  • Inline critical script and remove external request
+  • Move analytics/tracking script to load after user interaction
+  • Add type="module" for automatic deferral
 
 unoptimized_font — pick one:
-  • Replace a Google Fonts <link> with a self-hosted @font-face using woff2 (show the actual font name)
-  • Add font-display: swap to an existing @font-face rule
-  • Add font-display: optional to a decorative font to eliminate render blocking entirely
-  • Subset a font to only the unicode ranges actually used on the page
-  • Preload the most critical font file with <link rel="preload">
+  • Replace Google Fonts with woff2 @font-face: <style>@font-face { font-family: 'FontName'; src: url('...woff2 URL...') format('woff2'), url('...woff URL...') format('woff'); font-display: swap; }</style>
+  • Add font-display: swap to existing fonts: <style>@font-face { ... font-display: swap; }</style>
+  • Add font-display: optional to decorative fonts
+  • Preload critical font files: <link rel="preload" href="..." as="font" type="font/woff2" crossorigin>
+  • Subset fonts to used unicode ranges
 
 oversized_page — pick one:
-  • Add IntersectionObserver lazy loading to below-fold images (use real image selectors/classes)
-  • Defer a specific non-critical stylesheet using media="print" onload trick
-  • Add HTTP cache headers or Cache-Control config for static assets
-  • Split a large inline <style> block and defer the non-critical portion
-  • Replace an embedded iframe (video/map) with a click-to-load facade
+  • Lazy-load below-fold images: <script>var observer = new IntersectionObserver(function(entries) { entries.forEach(function(e) { if (e.isIntersecting) e.target.src = e.target.dataset.src; }); }); var imgs = document.querySelectorAll('img[data-src]'); for (var i = 0; i < imgs.length; i++) observer.observe(imgs[i]);</script>
+  • Defer non-critical stylesheets: <link rel="stylesheet" href="..." media="print" onload="this.media='all'">
+  • Add HTTP cache headers via server config
+  • Split and defer non-critical inline CSS
+  • Replace embedded iframes with click-to-load facade
 
 high_request_count — pick one:
-  • Replace a specific third-party library with a vanilla JS equivalent (name the library and show the replacement)
-  • Bundle and inline two or more small scripts that are loaded separately
-  • Remove a specific unused analytics or widget script entirely
-  • Replace a jQuery snippet with the vanilla JS equivalent using real selectors from the page
-  • Consolidate multiple icon/font requests into a single sprite or subset
+  • Replace heavy library with vanilla JS: <script>/* replace jQuery/lodash with vanilla equivalents */</script>
+  • Bundle and inline multiple small scripts: <script>/* combined inline scripts */</script>
+  • Remove unused analytics or widget script: <script>/* remove or conditionally load */</script>
+  • Replace jQuery with vanilla JS selector equivalents
+  • Consolidate icon/font requests into sprites
 
 slow_load_time — pick one:
-  • Add <link rel="preconnect"> for a specific third-party domain used by the page
-  • Add <link rel="preload"> for the page's LCP image or critical CSS file
-  • Add dns-prefetch hints for specific third-party hostnames found in the page resources
-  • Add resource hints to prefetch the next likely navigation target
-  • Add <link rel="modulepreload"> for a critical JS module
-
-no_compression — pick one:
-  • Add nginx gzip/brotli config block enabling compression for html, css, js, json, svg
-  • Add Express/Node.js compression middleware (show the actual require and app.use call)
-  • Add Apache .htaccess mod_deflate or mod_brotli directives
-  • Add Vercel/Netlify config to enable compression (vercel.json or netlify.toml)
-
-missing_cache_headers — pick one:
-  • Add Cache-Control headers for static assets in nginx config (js, css, images)
-  • Add cache headers in Express using res.set() or a middleware, specific to the route
-  • Add <filesMatch> Apache directives for long-lived caching of static assets
-  • Add cache headers in Vercel/Netlify config for the specific asset types
+  • Add preconnect hints: <link rel="preconnect" href="https://...third-party-domain...">
+  • Preload LCP image or critical CSS: <link rel="preload" href="..." as="image">
+  • Add dns-prefetch for third-party domains: <link rel="dns-prefetch" href="https://...">
+  • Prefetch next navigation target
+  • Add modulepreload for critical JS modules
 
 missing_lazy_loading — pick one:
-  • Add loading="lazy" to specific <img> tags found on the page (show the actual tags)
-  • Add fetchpriority="high" to the above-fold LCP image and loading="lazy" to the rest
-  • Replace manual img tags with a lazy-loading IntersectionObserver wrapper component
-  • Add decoding="async" alongside loading="lazy" to the images
+  • Add loading="lazy" to images: <script>var imgs = document.querySelectorAll('img'); for (var i = 0; i < imgs.length; i++) imgs[i].loading = 'lazy';</script>
+  • Add fetchpriority="high" to LCP image, loading="lazy" to rest
+  • Create IntersectionObserver wrapper for lazy loading
+  • Add decoding="async" alongside loading="lazy"
 
 large_inline_script — pick one:
-  • Extract the inline script to an external .js file and replace with <script src="...">
-  • Move the inline script to the bottom of <body> and add defer logic
-  • Split the inline script — keep only the critical initialization inline, move the rest out
-  • Minify the inline script using a build tool config (show the relevant config)
+  • Extract inline script to external file: <script src="..." defer></script>
+  • Move inline script to bottom of body with defer logic
+  • Split inline script — keep only critical initialization, defer the rest: <script>/* critical code only */</script>
+  • Minify inline script using build config
 
 third_party_heavy — pick one:
-  • Load a specific analytics script (by its actual URL) only after user interaction using an event listener
-  • Replace a specific third-party widget with a self-hosted or lighter alternative
-  • Add a Partytown config to run third-party scripts in a web worker (show actual setup)
-  • Consolidate tracking pixels by using a tag manager instead of individual script tags
-  • Lazy-load a specific third-party script after the page's load event fires
+  • Load analytics script after user interaction: <script>window.addEventListener('click', function() { var s = document.createElement('script'); s.src = '...'; document.body.appendChild(s); }, {once: true});</script>
+  • Replace heavy widget with self-hosted or lighter alternative
+  • Add Partytown config to run third-party scripts in web worker
+  • Consolidate tracking pixels using GTM instead of individual scripts
+  • Lazy-load third-party script after page load
 
 The console_script must:
-- Be a clean, readable, non-destructive script using real DOM selectors from the page
-- Demonstrate the fix visually (e.g. show what an image would look like lazy-loaded, log what a deferred script tag would look like)
-- Reset safely on page refresh
-- NOT use eval(), NOT make network requests, NOT permanently alter anything
+- Be clean, readable, non-destructive JavaScript
+- Use real DOM selectors from the page
+- Demonstrate the fix visually (log what would change, show potential savings)
+- NOT permanently modify the page
+- NOT use eval(), NOT make network requests
+- Be safe to paste into browser devtools console
+- CAN use template literals and modern JS (only used in console, not GTM)
 
 Respond ONLY with valid JSON matching this exact schema:
 {
-  "code_snippet": "string — the actual implementable fix using real URLs and elements from the page",
-  "console_script": "string — a browser devtools console script to preview the fix temporarily",
-  "description": "string — one sentence explaining what this specific fix does and why it reduces carbon footprint"
+  "code_snippet": "string — GTM-ready HTML/JS (wrapped in <style> or <script> tags, self-contained, ES5-compatible)",
+  "console_script": "string — browser devtools console preview script (can use modern JS)",
+  "description": "string — one sentence explaining what this fix does and why it reduces carbon footprint"
 }"""
 
 
@@ -146,20 +148,34 @@ async def generate_fixes_for_page(page: Page, dom_context: str) -> list[CodeFix]
     """Generate a CodeFix for every flag on a page.
 
     Applies fixes sequentially to avoid double-counting overlapping byte savings.
+    
+    Skips server-side flags that cannot be implemented via GTM:
+    - no_compression: requires server config (nginx, Express middleware)
+    - missing_cache_headers: requires HTTP header configuration
     """
     if not page.flags:
         return []
 
+    # Filter to GTM-compatible flags only
+    gtm_compatible_flags = [
+        f for f in page.flags
+        if f.type not in {"no_compression", "missing_cache_headers"}
+    ]
+    
+    if not gtm_compatible_flags:
+        logger.info("page %s: all flags are server-side (not GTM-compatible)", page.url)
+        return []
+
     tasks = [
         _generate_fix_data(flag, page, dom_context)
-        for flag in page.flags
+        for flag in gtm_compatible_flags
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     fixes = []
     remaining_bytes = max(page.transfer_size_bytes, 0)
 
-    for flag, result in zip(page.flags, results):
+    for flag, result in zip(gtm_compatible_flags, results):
         if isinstance(result, Exception):
             logger.warning("codegen failed for %s on %s: %s", flag.type, page.url, result)
             continue
@@ -188,9 +204,10 @@ async def generate_fixes_for_page(page: Page, dom_context: str) -> list[CodeFix]
 
 
 async def _generate_fix_data(flag: Flag, page: Page, dom_context: str) -> tuple[str, str, str]:
-    """Call Claude to generate code fix data for a single flag.
+    """Call Claude to generate GTM-compatible code fix data for a single flag.
 
     Returns: (code_snippet, console_script, description)
+    code_snippet is now guaranteed to be GTM-safe (<style> or <script> wrapped)
     """
     context = _build_context(flag, page, dom_context)
 
@@ -218,6 +235,7 @@ async def _generate_fix_data(flag: Flag, page: Page, dom_context: str) -> tuple[
         # Fall back to extracting fields individually with a more lenient approach.
         data = _extract_fields_lenient(raw)
 
+    # code_snippet is now GTM-safe from Claude, no additional sanitization needed
     return data["code_snippet"], data["console_script"], data["description"]
 
 

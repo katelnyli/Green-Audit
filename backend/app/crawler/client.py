@@ -182,7 +182,15 @@ async def _measure_page(url: str) -> dict:
 
     load_ms = int((time.monotonic() - start) * 1000)
     html = body.decode("utf-8", errors="replace")
-    images = _images(html, url)
+    
+    with open("/tmp/audit-debug.log", "a") as f:
+        f.write(f"\n_measure_page({url}):\n")
+        f.write(f"  HTML length: {len(html)}\n")
+        f.write(f"  Contains '<img': {('<img' in html)}\n")
+        f.write(f"  img count via grep: {html.count('<img')}\n")
+        f.write(f"  First 500 chars: {html[:500]}\n")
+    
+    images = await _images(html, url)
     scripts = _scripts(html, url)
     fonts = _fonts(html, url)
     stylesheet_count = len(re.findall(r'<link[^>]+rel=["\']stylesheet["\']', html, re.I))
@@ -243,18 +251,65 @@ async def _measure_page(url: str) -> dict:
     }
 
 
-def _images(html: str, base: str) -> list[dict]:
+async def _get_image_size(url: str) -> int | None:
+    """Fetch actual image size via HTTP HEAD/GET request with timeout protection."""
+    try:
+        async with httpx.AsyncClient(timeout=2) as c:
+            # Try HEAD first (faster)
+            try:
+                resp = await c.head(url, follow_redirects=True)
+                if resp.status_code == 200:
+                    content_length = resp.headers.get("content-length")
+                    if content_length:
+                        return int(content_length)
+            except Exception:
+                pass  # Fall through to GET
+            
+            # Fall back to GET if HEAD fails (some servers don't support HEAD)
+            resp = await c.get(url, follow_redirects=True)
+            content_length = resp.headers.get("content-length")
+            if content_length:
+                return int(content_length)
+            # If no content-length header, use response size
+            return len(resp.content) if resp.content else None
+    except Exception as e:
+        logger.debug("image size fetch failed for %s: %s", url, e)
+    return None
+
+
+async def _images(html: str, base: str) -> list[dict]:
     out = []
-    for m in re.finditer(r'<img[^>]+src=["\']([^"\'>\s]+)["\']', html, re.I):
+    matches = list(re.finditer(r'<img[^>]+src=["\']([^"\'>\s]+)["\']', html, re.I))
+    with open("/tmp/audit-debug.log", "a") as f:
+        f.write(f"\n_images: Found {len(matches)} img tags\n")
+    
+    for m in matches:
         src = _abs(m.group(1), base)
         if not src:
             continue
         fmt = _fmt(src)
+        # If format is unknown (no extension in URL), assume JPEG (most common on the web)
+        if fmt == "unknown":
+            fmt = "jpeg"
         modern = fmt in ("webp", "avif", "svg")
+        
+        # Try to fetch actual image size via HEAD/GET request
+        size_bytes = await _get_image_size(src)
+        if size_bytes is None or size_bytes == 0:
+            # Fallback to estimates: higher values to catch oversized pages
+            # Modern formats (WebP/AVIF) should be ~50KB, legacy ~300KB
+            size_bytes = 50_000 if modern else 300_000
+        
+        with open("/tmp/audit-debug.log", "a") as f:
+            f.write(f"  Image: {src[:60]}... fmt={fmt} modern={modern} size={size_bytes}\n")
+        
         out.append({
-            "url": src, "size_bytes": 35_000 if modern else 175_000,
+            "url": src, "size_bytes": size_bytes,
             "format": fmt, "has_modern_alternative": not modern, "flagged": not modern,
         })
+    
+    with open("/tmp/audit-debug.log", "a") as f:
+        f.write(f"_images: Returning {len(out)} images\n")
     return out[:20]
 
 

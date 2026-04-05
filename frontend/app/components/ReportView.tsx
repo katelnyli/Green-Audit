@@ -93,10 +93,10 @@ export default function ReportView({ result }: { result: AuditResult }) {
       let name = `${fix.flag_type} - ${norm}`; let s = 2;
       while (used.has(name)) name = `${fix.flag_type} - ${norm} (${s++})`;
       used.add(name);
-      return { tagId: String(tagId + 1), name, type: "html", parameter: [{ type: "TEMPLATE", key: "html", value: fix.injection_js || fix.code_snippet }], firingTriggerId: ["1"] };
+      return { tagId: String(tagId + 1), name, type: "html", parameter: [{ type: "TEMPLATE", key: "html", value: fix.code_snippet }], firingTriggerId: ["1"] };
     });
-    const blob = new Blob([JSON.stringify({ exportFormatVersion: 2, exportTime: timestamp, containerVersion: { name: `Carbon Audit - ${domain}`, container: { name: `Carbon Audit GTM - ${domain}`, publicId: `GTM-${domain.replace(/\./g, "-").toUpperCase()}`, usageContext: ["WEB"] }, tag: tags, trigger: [{ name: "All Pages", type: "PAGEVIEW", triggerId: "1" }], variable: [], folder: [], builtInVariable: [] } }, null, 2)], { type: "application/json" });
-    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: `carbon-audit-${domain}-${timestamp.split("T")[0]}.json` });
+    const blob = new Blob([JSON.stringify({ exportFormatVersion: 2, exportTime: timestamp, containerVersion: { name: `Green Audit - ${domain}`, container: { name: `Green Audit GTM - ${domain}`, publicId: `GTM-${domain.replace(/\./g, "-").toUpperCase()}`, usageContext: ["WEB"] }, tag: tags, trigger: [{ name: "All Pages", type: "PAGEVIEW", triggerId: "1" }], variable: [], folder: [], builtInVariable: [] } }, null, 2)], { type: "application/json" });
+    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: `green-audit-${domain}-${timestamp.split("T")[0]}.json` });
     a.click(); URL.revokeObjectURL(a.href);
   };
 

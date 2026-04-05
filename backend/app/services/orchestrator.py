@@ -4,6 +4,7 @@ Orchestrates the full audit pipeline:
 """
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -12,7 +13,7 @@ from app.services import codegen as codegen_service
 from app.services import lighthouse as lh_service
 from app.services import scoring
 
-# Concurrency caps — prevent rate-limit hangs with large page counts
+logger = logging.getLogger(__name__)
 _SCORE_CONCURRENCY = 5   # PageSpeed Insights: avoid 429s
 _FIX_CONCURRENCY   = 3   # Claude API: each page spawns N flag calls internally
 
@@ -117,6 +118,11 @@ async def run_full_audit(
         if r is not None and not isinstance(r, Exception):
             all_fixes.extend(r)
 
+    with open("/tmp/audit-debug.log", "a") as f:
+        f.write(f"\norchestrator: Generated {len(all_fixes)} total fixes\n")
+        for fix in all_fixes[:10]:
+            f.write(f"  - {fix.flag_type}: {fix.description[:60]}...\n")
+
     # Cap at 3 fixes per flag type, keeping the highest CO2 savings
     all_fixes.sort(key=lambda f: f.estimated_co2_saved, reverse=True)
     type_counts: dict[str, int] = {}
@@ -125,6 +131,11 @@ async def run_full_audit(
         if type_counts.get(fix.flag_type, 0) < 3:
             capped_fixes.append(fix)
             type_counts[fix.flag_type] = type_counts.get(fix.flag_type, 0) + 1
+
+    with open("/tmp/audit-debug.log", "a") as f:
+        f.write(f"After capping: {len(capped_fixes)} fixes\n")
+        for flag_type, count in sorted(type_counts.items()):
+            f.write(f"  - {flag_type}: {count}\n")
 
     return AuditResult(
         audit_id=audit_id,

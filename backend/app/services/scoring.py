@@ -4,6 +4,7 @@ Flag generation, CO2 scoring, grading, and summary assembly.
 
 from collections import defaultdict
 from urllib.parse import urlparse
+import logging
 
 from app.models.audit import (
     Flag,
@@ -16,9 +17,11 @@ from app.models.audit import (
 )
 from app.services.co2 import estimate_co2, grade
 
+logger = logging.getLogger(__name__)
+
 # Thresholds
-_LARGE_PAGE_BYTES = 800_000     # 800 KB
-_HIGH_REQUEST_COUNT = 30
+_LARGE_PAGE_BYTES = 500_000     # 500 KB (lowered from 800KB to catch more pages)
+_HIGH_REQUEST_COUNT = 25        # Lowered from 30
 _SLOW_LOAD_MS = 800
 
 
@@ -47,7 +50,14 @@ def generate_flags(
         )
         flags.append(Flag(type="render_blocking_script", detail=detail, impact="medium"))
 
-    non_modern_images = [img for img in resources.images if img.flagged and img.has_modern_alternative]
+    # Flag ALL non-modern images, regardless of size
+    # (even if they're small, they should use modern formats for carbon reduction)
+    non_modern_images = [img for img in resources.images if not img.format.lower() in ("webp", "avif", "svg")]
+    with open("/tmp/audit-debug.log", "a") as f:
+        f.write(f"\nscoring: total_images={len(resources.images)} non_modern={len(non_modern_images)}\n")
+        for i, img in enumerate(resources.images[:5]):
+            f.write(f"  img{i}: {img.url[:60]}... fmt={img.format}\n")
+    
     if non_modern_images:
         worst = max(non_modern_images, key=lambda i: i.size_bytes)
         count = len(non_modern_images)
@@ -56,7 +66,12 @@ def generate_flags(
             if count > 1
             else f"{_basename(worst.url)} is {worst.format.upper()} — convert to WebP/AVIF"
         )
+        with open("/tmp/audit-debug.log", "a") as f:
+            f.write(f"✓ Adding suboptimal_image_format flag: {detail[:80]}...\n")
         flags.append(Flag(type="suboptimal_image_format", detail=detail, impact="high"))
+    else:
+        with open("/tmp/audit-debug.log", "a") as f:
+            f.write(f"✗ No non-modern images found\n")
 
     non_woff2_fonts = [f for f in resources.fonts if not f.url.lower().endswith(".woff2")]
     if non_woff2_fonts:
@@ -106,7 +121,7 @@ def generate_flags(
             impact="medium",
         ))
 
-    if lazy_loadable_images >= 3:
+    if lazy_loadable_images >= 2:
         flags.append(Flag(
             type="missing_lazy_loading",
             detail=f"{lazy_loadable_images} images lack loading=\"lazy\" — defer below-fold images",
