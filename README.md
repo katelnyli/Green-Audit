@@ -17,6 +17,7 @@ green-audit/
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+npm install
 playwright install chromium
 uvicorn main:app --reload
 ```
