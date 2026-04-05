@@ -16,6 +16,7 @@ export default function Progress() {
   const [error, setError] = useState("");
   const [activeAgent, setActiveAgent] = useState(0);
   const [blockedAgents, setBlockedAgents] = useState<boolean[]>([false, false, false]);
+  const [isTerminating, setIsTerminating] = useState(false);
   const pagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -37,6 +38,23 @@ export default function Progress() {
   useEffect(() => {
     pagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [status?.pages_discovered?.length]);
+
+  const handleTerminate = async () => {
+    if (!auditId || !window.confirm("Are you sure you want to stop this audit?")) return;
+    
+    setIsTerminating(true);
+    try {
+      const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+      const response = await fetch(`${BASE}/audit/${auditId}/terminate`, { method: "POST" });
+      if (response.ok) {
+        // Terminate succeeded, redirect to report page with whatever data was collected
+        setTimeout(() => router.push(`/report?audit_id=${auditId}`), 300);
+      }
+    } catch (err) {
+      console.error("Failed to terminate audit:", err);
+      setIsTerminating(false);
+    }
+  };
 
 
   if (error) {
@@ -97,9 +115,20 @@ export default function Progress() {
                 {status.status === "done" ? "Completed" : `Scanning ${domain}`}
               </h1>
             </div>
-            <a href="/" className="text-[#606060] hover:text-[#7ec87e] text-xs transition-colors shrink-0 ml-2">
-              ← New Audit
-            </a>
+            <div className="flex gap-2 items-center shrink-0 ml-2">
+              <a href="/" className="text-[#606060] hover:text-[#7ec87e] text-xs transition-colors">
+                ← New Audit
+              </a>
+              {status.status !== "done" && status.status !== "error" && (
+                <button
+                  onClick={handleTerminate}
+                  disabled={isTerminating}
+                  className="px-2 py-1 text-xs bg-[#c87e7e] hover:bg-[#a87e7e] text-[#0a0f0a] rounded font-mono transition-colors disabled:opacity-50"
+                >
+                  {isTerminating ? "Stopping..." : "Stop Audit"}
+                </button>
+              )}
+            </div>
           </div>
           <div className="text-[#7ec87e] font-mono text-xs">
             {phaseLabel[status.status] ?? status.status}

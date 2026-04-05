@@ -22,6 +22,7 @@ async def run_full_audit(
     on_agent_live_url: Callable[[int, str], None] | None = None,
     on_page_discovered: Callable[[str], None] | None = None,
     on_agent_status: Callable[[str], None] | None = None,
+    on_pages_scored: Callable[[list[Page]], None] | None = None,
 ) -> AuditResult:
     from app.crawler.client import crawl
 
@@ -51,6 +52,10 @@ async def run_full_audit(
     on_progress("scoring", total, total, url)
 
     summary = scoring.build_summary(pages)
+    
+    # Save intermediate result so early termination shows data
+    if on_pages_scored:
+        on_pages_scored(pages)
 
     # ── Phase 3: generate code fixes for all pages concurrently ──────────────
     on_progress("generating_fixes", 0, total, url)

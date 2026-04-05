@@ -25,6 +25,12 @@ export default function Report() {
       .then((status) => {
         if (status.result) {
           setResult(status.result);
+        } else if (status.status === "done" && status.pages_discovered.length === 0) {
+          // Terminated before any pages were found
+          setError("Audit was terminated before any pages were discovered");
+        } else if (status.status === "done") {
+          // Terminated mid-audit but had discovered pages - show empty result message
+          setError("Audit was terminated. No analysis data available yet.");
         } else {
           setError("Audit not complete yet");
         }

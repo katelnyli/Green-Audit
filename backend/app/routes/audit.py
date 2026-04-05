@@ -11,13 +11,15 @@ router = APIRouter()
 
 # In-memory store — fine for a hackathon
 _jobs: dict[str, AuditStatus] = {}
+_tasks: dict[str, asyncio.Task] = {}
 
 
 @router.post("", response_model=AuditStarted)
 async def start_audit(req: AuditRequest):
     audit_id = str(uuid4())
     _jobs[audit_id] = AuditStatus(audit_id=audit_id, status="queued")
-    asyncio.create_task(_run_audit(audit_id, str(req.url), req.credentials))
+    task = asyncio.create_task(_run_audit(audit_id, str(req.url), req.credentials))
+    _tasks[audit_id] = task
     return AuditStarted(audit_id=audit_id)
 
 
@@ -27,6 +29,28 @@ async def get_audit(audit_id: str):
     if job is None:
         raise HTTPException(status_code=404, detail="Audit not found")
     return job
+
+
+@router.post("/{audit_id}/terminate")
+async def terminate_audit(audit_id: str):
+    """Terminate a running audit and return whatever data was collected."""
+    job = _jobs.get(audit_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Audit not found")
+    
+    # Cancel the task if it's still running
+    task = _tasks.get(audit_id)
+    if task and not task.done():
+        task.cancel()
+        _tasks.pop(audit_id, None)
+    
+    # Mark as done immediately so report page can access whatever we have
+    job.status = "done"
+    
+    # If a result was already partially generated, keep it
+    # Otherwise just return the status which has pages_discovered and current_url
+    
+    return {"status": "terminated", "audit_id": audit_id}
 
 
 @router.get("/{audit_id}/stream")
@@ -68,6 +92,7 @@ async def _run_audit(audit_id: str, url: str, credentials: dict | None):
             on_agent_live_url=lambda idx, live_url: _add_agent_live_url(audit_id, idx, live_url),
             on_page_discovered=lambda page_url: _add_discovered_page(audit_id, page_url),
             on_agent_status=lambda status: _set_agent_status(audit_id, status),
+            on_pages_scored=lambda pages: _save_intermediate_result(audit_id, url, pages),
         )
         job = _jobs[audit_id]
         job.status = "done"
@@ -119,3 +144,32 @@ def _set_agent_status(audit_id: str, status: str):
     job = _jobs.get(audit_id)
     if job:
         job.agent_status = status
+
+
+def _save_intermediate_result(audit_id: str, url: str, pages: list):
+    """Save partially scored pages so terminated audits show some data."""
+    from app.models.audit import AuditResult, Summary
+    
+    job = _jobs.get(audit_id)
+    if not job:
+        return
+    
+    # Build a summary from the scored pages
+    total_bytes = sum(p.transfer_size_bytes for p in pages)
+    total_co2 = sum(p.estimated_co2_grams for p in pages)
+    
+    job.result = AuditResult(
+        audit_id=audit_id,
+        target_url=url,
+        crawled_at="",
+        pages=pages,
+        summary=Summary(
+            total_pages_crawled=len(pages),
+            total_transfer_bytes=total_bytes,
+            total_estimated_co2_grams=total_co2,
+            sections_ranked=[],
+            top_flags=[],
+            grade="D"
+        ),
+        fixes=[],
+    )
