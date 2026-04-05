@@ -185,12 +185,25 @@ async def _measure_page(url: str) -> dict:
     images = _images(html, url)
     scripts = _scripts(html, url)
     fonts = _fonts(html, url)
+    stylesheet_count = len(re.findall(r'<link[^>]+rel=["\']stylesheet["\']', html, re.I))
+
+    # Estimate total page weight including all referenced resources
+    resource_bytes = (
+        sum(img["size_bytes"] for img in images)
+        + sum(s["size_bytes"] for s in scripts)
+        + sum(f["size_bytes"] for f in fonts)
+        + stylesheet_count * 25_000  # avg CSS file
+    )
+    total_bytes = len(body) + resource_bytes
+
+    # Count all outbound resource requests the browser would make
+    request_count = 1 + len(images) + len(scripts) + len(fonts) + stylesheet_count
 
     return {
         "url": url,
         "load_time_ms": load_ms,
-        "transfer_size_bytes": len(body),
-        "request_count": 1 + len(images) + len(scripts) + len(fonts),
+        "transfer_size_bytes": total_bytes,
+        "request_count": request_count,
         "resources": {"images": images, "scripts": scripts, "fonts": fonts, "other": []},
         "dom_context": _dom_context(html, url),
     }
@@ -228,19 +241,36 @@ def _scripts(html: str, base: str) -> list[dict]:
 
 def _fonts(html: str, base: str) -> list[dict]:
     out = []
+    seen: set[str] = set()
+
+    # Direct font file links (preload or rel=font)
     for m in re.finditer(r'<link([^>]+)>', html, re.I):
         attrs = m.group(1)
-        if not re.search(r'(font|preload)', attrs, re.I):
-            continue
         h = re.search(r'href=["\']([^"\'>\s]+)["\']', attrs)
         if not h:
             continue
         href = _abs(h.group(1), base)
-        if not href:
+        if not href or href in seen:
             continue
         ext = href.split("?")[0].rsplit(".", 1)[-1].lower()
         if ext in ("woff", "woff2", "ttf", "otf", "eot"):
+            seen.add(href)
             out.append({"url": href, "size_bytes": 50_000})
+        # Google Fonts / Typekit / Bunny CDN stylesheet links
+        elif re.search(r'(fonts\.googleapis\.com|fonts\.bunny\.net|use\.typekit\.net|use\.fontawesome\.com)', href, re.I):
+            seen.add(href)
+            out.append({"url": href, "size_bytes": 50_000})
+
+    # @font-face declarations in inline <style> blocks
+    for style_m in re.finditer(r'<style[^>]*>(.*?)</style>', html, re.S | re.I):
+        for ff_m in re.finditer(r"@font-face\s*\{([^}]+)\}", style_m.group(1), re.I):
+            src_m = re.search(r"url\(['\"]?([^'\")\s]+)['\"]?\)", ff_m.group(1))
+            if src_m:
+                href = _abs(src_m.group(1), base)
+                if href and href not in seen:
+                    seen.add(href)
+                    out.append({"url": href, "size_bytes": 50_000})
+
     return out[:10]
 
 

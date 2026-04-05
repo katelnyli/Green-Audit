@@ -17,9 +17,9 @@ from app.models.audit import (
 from app.services.co2 import estimate_co2, grade
 
 # Thresholds
-_LARGE_PAGE_BYTES = 2_000_000   # 2 MB
-_HIGH_REQUEST_COUNT = 80
-_SLOW_LOAD_MS = 4_000
+_LARGE_PAGE_BYTES = 800_000     # 800 KB
+_HIGH_REQUEST_COUNT = 30
+_SLOW_LOAD_MS = 800
 
 
 def generate_flags(
@@ -30,35 +30,45 @@ def generate_flags(
 ) -> list[Flag]:
     flags: list[Flag] = []
 
-    for img in resources.images:
-        if img.flagged and img.has_modern_alternative:
-            flags.append(Flag(
-                type="suboptimal_image_format",
-                detail=f"{_basename(img.url)} is {img.format.upper()} — convert to WebP/AVIF",
-                impact="high",
-            ))
+    # One flag per type per page — pick the worst offender for the detail message
+    blocking_scripts = [s for s in resources.scripts if s.render_blocking]
+    if blocking_scripts:
+        worst = max(blocking_scripts, key=lambda s: s.size_bytes)
+        count = len(blocking_scripts)
+        detail = (
+            f"{count} render-blocking scripts (e.g. {_basename(worst.url)}) — add defer or async"
+            if count > 1
+            else f"{_basename(worst.url)} is render-blocking — add defer or async"
+        )
+        flags.append(Flag(type="render_blocking_script", detail=detail, impact="medium"))
 
-    for script in resources.scripts:
-        if script.render_blocking:
-            flags.append(Flag(
-                type="render_blocking_script",
-                detail=f"{_basename(script.url)} is render-blocking — add defer or async",
-                impact="medium",
-            ))
+    non_modern_images = [img for img in resources.images if img.flagged and img.has_modern_alternative]
+    if non_modern_images:
+        worst = max(non_modern_images, key=lambda i: i.size_bytes)
+        count = len(non_modern_images)
+        detail = (
+            f"{count} images in legacy formats (e.g. {_basename(worst.url)} is {worst.format.upper()}) — convert to WebP/AVIF"
+            if count > 1
+            else f"{_basename(worst.url)} is {worst.format.upper()} — convert to WebP/AVIF"
+        )
+        flags.append(Flag(type="suboptimal_image_format", detail=detail, impact="high"))
 
-    for font in resources.fonts:
-        if not font.url.lower().endswith(".woff2"):
-            flags.append(Flag(
-                type="unoptimized_font",
-                detail=f"{_basename(font.url)} is not woff2 — convert for ~30% size reduction",
-                impact="low",
-            ))
+    non_woff2_fonts = [f for f in resources.fonts if not f.url.lower().endswith(".woff2")]
+    if non_woff2_fonts:
+        worst = max(non_woff2_fonts, key=lambda f: f.size_bytes)
+        count = len(non_woff2_fonts)
+        detail = (
+            f"{count} fonts not in woff2 (e.g. {_basename(worst.url)}) — convert for ~30% size reduction"
+            if count > 1
+            else f"{_basename(worst.url)} is not woff2 — convert for ~30% size reduction"
+        )
+        flags.append(Flag(type="unoptimized_font", detail=detail, impact="low"))
 
     if transfer_size_bytes > _LARGE_PAGE_BYTES:
-        mb = round(transfer_size_bytes / 1_000_000, 1)
+        kb = round(transfer_size_bytes / 1_000)
         flags.append(Flag(
             type="oversized_page",
-            detail=f"Total transfer {mb} MB exceeds 2 MB budget",
+            detail=f"Total transfer {kb} KB exceeds 800 KB budget",
             impact="high",
         ))
 
@@ -72,7 +82,7 @@ def generate_flags(
     if load_time_ms > _SLOW_LOAD_MS:
         flags.append(Flag(
             type="slow_load_time",
-            detail=f"Load time {load_time_ms}ms exceeds 4s — audit blocking resources",
+            detail=f"Load time {load_time_ms}ms exceeds 2.5s — audit blocking resources",
             impact="medium",
         ))
 

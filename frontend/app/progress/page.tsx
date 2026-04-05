@@ -141,7 +141,9 @@ export default function Progress() {
           <div className="text-[#2e472e] text-xs uppercase tracking-widest mb-3">
             Pages discovered
             {pagesDiscovered.length > 0 && (
-              <span className="ml-2 text-[#3a5a3a]">({pagesDiscovered.length})</span>
+              <span className="ml-2 text-[#3a5a3a]">
+                ({pagesDiscovered.length}{status.total && status.total > 0 ? `/${status.total}` : ""})
+              </span>
             )}
           </div>
           {pagesDiscovered.length === 0 ? (
@@ -169,7 +171,6 @@ export default function Progress() {
               const pending = i > curPhaseIdx;
               return (
                 <div key={phase.key} className="flex items-center gap-3">
-                  {/* indicator */}
                   <div className="shrink-0 w-5 flex items-center justify-center">
                     {done ? (
                       <span className="text-[#3a5a3a] text-xs">✓</span>
@@ -196,7 +197,6 @@ export default function Progress() {
             })}
           </div>
 
-          {/* Progress bar if in a countable phase */}
           {status.total !== undefined && status.total > 0 && status.progress !== undefined && (
             <div className="mt-5">
               <div className="h-px bg-[#141f14] rounded-full overflow-hidden">
@@ -217,7 +217,6 @@ export default function Progress() {
           <div className="text-[#2e472e] text-xs uppercase tracking-widest mb-3">Activity</div>
           <div className="space-y-4 text-xs">
 
-            {/* Agent action */}
             {status.agent_status && (
               <div>
                 <div className="text-[#1e2e1e] uppercase tracking-widest mb-1.5">Agent</div>
@@ -225,7 +224,6 @@ export default function Progress() {
               </div>
             )}
 
-            {/* Current URL */}
             {status.current_url && (
               <div>
                 <div className="text-[#1e2e1e] uppercase tracking-widest mb-1.5">Current</div>
@@ -233,7 +231,6 @@ export default function Progress() {
               </div>
             )}
 
-            {/* Pages scanned summary */}
             {status.result && status.result.pages.length > 0 && (
               <div>
                 <div className="text-[#1e2e1e] uppercase tracking-widest mb-1.5">
