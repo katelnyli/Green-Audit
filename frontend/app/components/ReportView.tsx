@@ -15,6 +15,11 @@ const FLAG_COLORS: Record<string, { bg: string; text: string; border: string }> 
   oversized_page:          { bg: "bg-[#2a1a0a]", text: "text-[#e8a84a]", border: "border-[#4a3a1a]" },
   high_request_count:      { bg: "bg-[#2a0a0a]", text: "text-[#e87a7a]", border: "border-[#4a1a1a]" },
   slow_load_time:          { bg: "bg-[#0a2a2a]", text: "text-[#4ac8c8]", border: "border-[#1a4a4a]" },
+  no_compression:          { bg: "bg-[#2a2a0a]", text: "text-[#d4d44a]", border: "border-[#4a4a1a]" },
+  missing_cache_headers:   { bg: "bg-[#1a0a2a]", text: "text-[#a07ae8]", border: "border-[#3a1a5a]" },
+  missing_lazy_loading:    { bg: "bg-[#0a2a1a]", text: "text-[#4ac8a0]", border: "border-[#1a4a3a]" },
+  large_inline_script:     { bg: "bg-[#2a1a10]", text: "text-[#e8904a]", border: "border-[#4a2a10]" },
+  third_party_heavy:       { bg: "bg-[#1a0a0a]", text: "text-[#e86a6a]", border: "border-[#3a1a1a]" },
 };
 
 
@@ -27,6 +32,11 @@ function humanFlag(f: string) {
     high_request_count:      "Too Many Requests",
     unoptimized_font:        "Unoptimized Fonts",
     slow_load_time:          "Slow Load Time",
+    no_compression:          "No Compression",
+    missing_cache_headers:   "Missing Cache Headers",
+    missing_lazy_loading:    "Missing Lazy Loading",
+    large_inline_script:     "Large Inline Script",
+    third_party_heavy:       "Heavy Third Parties",
   };
   return map[f] ?? f.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
@@ -59,11 +69,8 @@ export default function ReportView({ result }: { result: AuditResult }) {
   const { summary, pages, fixes } = result;
   const [expandedFix, setExpandedFix] = useState<number | null>(0);
 
-  const numPages      = Math.max(1, summary.total_pages_crawled);
-  const avgCo2PerPage = summary.total_estimated_co2_grams / numPages;
-
-  // Annual projections — guaranteed non-zero for display
-  const annualCo2Grams = Math.max(1, avgCo2PerPage * ANNUAL_LOADS);
+  // Annual projections — based on total site CO2 so savings (also summed across all pages) stay consistent
+  const annualCo2Grams = Math.max(1, summary.total_estimated_co2_grams * ANNUAL_LOADS);
   const drivingKm = Math.max(1, Math.round(annualCo2Grams / CAR_GRAMS_PER_KM));
 
   const sortedFixes      = [...fixes].map((fix, i) => ({ fix, i })).sort((a, b) => b.fix.estimated_co2_saved - a.fix.estimated_co2_saved);

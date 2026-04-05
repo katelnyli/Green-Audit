@@ -12,6 +12,10 @@ from app.services import codegen as codegen_service
 from app.services import lighthouse as lh_service
 from app.services import scoring
 
+# Concurrency caps — prevent rate-limit hangs with large page counts
+_SCORE_CONCURRENCY = 5   # PageSpeed Insights: avoid 429s
+_FIX_CONCURRENCY   = 3   # Claude API: each page spawns N flag calls internally
+
 
 async def run_full_audit(
     audit_id: str,
@@ -42,22 +46,24 @@ async def run_full_audit(
     )
     total = len(raw_pages)
 
-    # ── Phase 2: score all pages — emit one progress tick per page ────────────
+    # ── Phase 2: score pages — capped concurrency + per-page progress ─────────
     on_progress("scoring", 0, total, url)
 
-    completed = 0
-    lock = asyncio.Lock()
+    score_sem  = asyncio.Semaphore(_SCORE_CONCURRENCY)
+    score_lock = asyncio.Lock()
+    score_done = 0
     lh_results: list = [None] * total
 
-    async def _score_one(idx: int, raw: dict):
-        nonlocal completed
-        try:
-            result = await lh_service.score(raw["url"])
-        except Exception as e:
-            result = e
-        async with lock:
-            completed += 1
-            on_progress("scoring", completed, total, raw["url"])
+    async def _score_one(idx: int, raw: dict) -> None:
+        nonlocal score_done
+        async with score_sem:
+            try:
+                result = await lh_service.score(raw["url"])
+            except Exception as e:
+                result = e
+        async with score_lock:
+            score_done += 1
+            on_progress("scoring", score_done, total, raw["url"])
         lh_results[idx] = result
 
     await asyncio.gather(*[_score_one(i, raw) for i, raw in enumerate(raw_pages)])
@@ -70,11 +76,9 @@ async def run_full_audit(
 
     summary = scoring.build_summary(pages)
 
-    # Save intermediate result so early termination shows data
     if on_pages_scored:
         on_pages_scored(pages)
 
-    # Check if user requested termination after scoring
     if should_stop_after_scoring and should_stop_after_scoring():
         return AuditResult(
             audit_id=audit_id,
@@ -85,23 +89,25 @@ async def run_full_audit(
             fixes=[],
         )
 
-    # ── Phase 3: generate code fixes — emit one progress tick per page ────────
+    # ── Phase 3: generate fixes — capped concurrency + per-page progress ──────
     on_progress("generating_fixes", 0, total, url)
 
-    fix_completed = 0
+    fix_sem  = asyncio.Semaphore(_FIX_CONCURRENCY)
     fix_lock = asyncio.Lock()
+    fix_done = 0
     fix_results: list = [None] * total
 
-    async def _fix_one(idx: int, page: Page):
-        nonlocal fix_completed
+    async def _fix_one(idx: int, page: Page) -> None:
+        nonlocal fix_done
         dom_context = raw_pages[idx].get("dom_context", "")
-        try:
-            result = await codegen_service.generate_fixes_for_page(page, dom_context)
-        except Exception as e:
-            result = e
+        async with fix_sem:
+            try:
+                result = await codegen_service.generate_fixes_for_page(page, dom_context)
+            except Exception as e:
+                result = e
         async with fix_lock:
-            fix_completed += 1
-            on_progress("generating_fixes", fix_completed, total, page.url)
+            fix_done += 1
+            on_progress("generating_fixes", fix_done, total, page.url)
         fix_results[idx] = result
 
     await asyncio.gather(*[_fix_one(i, page) for i, page in enumerate(pages)])
