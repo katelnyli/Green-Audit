@@ -18,8 +18,7 @@ _tasks: dict[str, asyncio.Task] = {}
 async def start_audit(req: AuditRequest):
     audit_id = str(uuid4())
     _jobs[audit_id] = AuditStatus(audit_id=audit_id, status="queued")
-    task = asyncio.create_task(_run_audit(audit_id, str(req.url), req.credentials))
-    _tasks[audit_id] = task
+    asyncio.create_task(_run_audit(audit_id, str(req.url), req.credentials, req.max_pages))
     return AuditStarted(audit_id=audit_id)
 
 
@@ -77,7 +76,7 @@ async def stream_audit(audit_id: str):
     )
 
 
-async def _run_audit(audit_id: str, url: str, credentials: dict | None):
+async def _run_audit(audit_id: str, url: str, credentials: dict | None, max_pages: int = 10):
     from app.services.orchestrator import run_full_audit
 
     try:
@@ -85,6 +84,7 @@ async def _run_audit(audit_id: str, url: str, credentials: dict | None):
             audit_id=audit_id,
             url=url,
             credentials=credentials,
+            max_pages=max_pages,
             on_progress=lambda phase, progress, total, current_url: _update_progress(
                 audit_id, phase, progress, total, current_url
             ),

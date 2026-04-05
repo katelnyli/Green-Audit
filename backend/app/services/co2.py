@@ -59,8 +59,11 @@ def estimate_co2(transfer_bytes: int, *, green_host: bool | None = None) -> floa
         value = float(payload.get("grams", 0.0))
         return round(max(value, 0.0), 4)
     except Exception:
-        # Keep audits resilient even if Node/CO2.js is unavailable.
-        return 0.0
+        pass
+
+    # Python fallback: SWD model (matches CO2.js ~1.482e-7 g/byte)
+    g_per_byte = 1.482e-7
+    return round(max(transfer_bytes * g_per_byte, 0.0), 4)
 
 
 def grade(avg_co2_per_page: float) -> Literal["A", "B", "C", "D", "F"]:
