@@ -103,8 +103,6 @@ export default function ProgressStream({ auditId }: { auditId: string }) {
         {/* Top bar */}
         <div className="flex items-center justify-between px-6 py-3 border-b border-zinc-800 shrink-0">
           <div className="flex items-center gap-3">
-            <span className="text-green-400 text-lg">🌿</span>
-            <span className="text-white font-semibold">Green Audit</span>
             <span className="text-zinc-600 text-sm">—</span>
             <span className="text-zinc-400 text-sm font-mono truncate max-w-xs">
               {status?.current_url ?? "Crawling…"}
