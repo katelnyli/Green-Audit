@@ -38,6 +38,10 @@ export default function ReportView({ result }: { result: AuditResult }) {
     (sum, idx) => sum + fixes[idx].estimated_co2_saved,
     0
   );
+  const baselineCO2 = Math.max(summary.total_estimated_co2_grams, 0.000001);
+  
+  const potentialReductionPct = (totalPotentialSavings / baselineCO2) * 100;
+  const selectedReductionPct = (selectedSavings / baselineCO2) * 100;
 
   // Calculate average performance score
   const avgPerformance = pages.length > 0
@@ -45,9 +49,12 @@ export default function ReportView({ result }: { result: AuditResult }) {
     : 0;
 
   // Calculate "after" stats
-  const afterCO2 = summary.total_estimated_co2_grams - selectedSavings;
-  const afterTransfer = Math.round(summary.total_transfer_bytes * (1 - selectedSavings / summary.total_estimated_co2_grams));
-  const afterPerformance = Math.min(100, avgPerformance + Math.round((selectedSavings / summary.total_estimated_co2_grams) * 30));
+  const cappedAfterCO2 = Math.max(summary.total_estimated_co2_grams - selectedSavings, 0);
+  const cappedAfterTransfer = Math.max(
+    summary.total_transfer_bytes - Math.round(summary.total_transfer_bytes * (selectedSavings / baselineCO2)),
+    0
+  );
+  const afterPerformance = Math.min(100, avgPerformance + Math.round((selectedSavings / baselineCO2) * 30));
 
   const toggleFix = (idx: number) => {
     setSelectedFixes((prev) => {
@@ -174,10 +181,10 @@ export default function ReportView({ result }: { result: AuditResult }) {
             <div className="bg-[#0f1a0f] border border-[#1a2a1a] rounded p-4">
               <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-2">Potential Savings</div>
               <div className="text-2xl font-mono font-bold text-[#7ec87e]">
-                {totalPotentialSavings.toFixed(1)}g
+                {totalPotentialSavings.toFixed(4)}g
               </div>
               <div className="text-xs text-[#2a4a2a] mt-1">
-                {((totalPotentialSavings / summary.total_estimated_co2_grams) * 100).toFixed(0)}% reduction
+                {potentialReductionPct.toFixed(2)}% reduction
               </div>
             </div>
           )}
@@ -206,7 +213,7 @@ export default function ReportView({ result }: { result: AuditResult }) {
                         <div className="text-xs font-mono text-[#e8ede8] leading-snug">{fix.flag_type}</div>
                         <div className="text-xs text-[#4a6a4a] mt-1 line-clamp-2">{fix.description}</div>
                         <div className="text-xs text-[#7ec87e] font-mono mt-1">
-                          ~{fix.estimated_co2_saved.toFixed(2)}g saved
+                          ~{fix.estimated_co2_saved.toFixed(4)}g saved
                         </div>
                       </div>
                     </div>
@@ -284,12 +291,12 @@ export default function ReportView({ result }: { result: AuditResult }) {
                 <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-3">CO₂ Emissions</div>
                 <div className="text-4xl font-mono font-bold text-[#7ec87e] mb-2">
                   {previewMode === "before"
-                    ? summary.total_estimated_co2_grams.toFixed(1)
-                    : afterCO2.toFixed(1)}g
+                    ? summary.total_estimated_co2_grams.toFixed(4)
+                    : cappedAfterCO2.toFixed(4)}g
                 </div>
                 {previewMode === "after" && selectedSavings > 0 && (
                   <div className="text-xs font-mono text-[#7ec87e]">
-                    ↓ {((selectedSavings / summary.total_estimated_co2_grams) * 100).toFixed(0)}% reduction
+                    ↓ {selectedReductionPct.toFixed(2)}% reduction
                   </div>
                 )}
               </div>
@@ -314,11 +321,11 @@ export default function ReportView({ result }: { result: AuditResult }) {
                 <div className="text-4xl font-mono font-bold text-[#7ec87e] mb-2">
                   {previewMode === "before"
                     ? fmt(summary.total_transfer_bytes)
-                    : fmt(afterTransfer)}
+                    : fmt(cappedAfterTransfer)}
                 </div>
-                {previewMode === "after" && afterTransfer < summary.total_transfer_bytes && (
+                {previewMode === "after" && cappedAfterTransfer < summary.total_transfer_bytes && (
                   <div className="text-xs font-mono text-[#7ec87e]">
-                    ↓ {fmt(summary.total_transfer_bytes - afterTransfer)} saved
+                    ↓ {fmt(summary.total_transfer_bytes - cappedAfterTransfer)} saved
                   </div>
                 )}
               </div>
@@ -332,7 +339,7 @@ export default function ReportView({ result }: { result: AuditResult }) {
                   <div>
                     <div className="flex justify-between text-xs font-mono mb-2">
                       <span className="text-[#4a6a4a]">Before</span>
-                      <span className="text-[#c87e7e]">{summary.total_estimated_co2_grams.toFixed(1)}g</span>
+                      <span className="text-[#c87e7e]">{summary.total_estimated_co2_grams.toFixed(4)}g</span>
                     </div>
                     <div className="h-3 bg-[#0f1a0f] rounded-full overflow-hidden">
                       <div className="h-full bg-[#c87e7e]" style={{ width: "100%" }} />
@@ -341,12 +348,12 @@ export default function ReportView({ result }: { result: AuditResult }) {
                   <div>
                     <div className="flex justify-between text-xs font-mono mb-2">
                       <span className="text-[#4a6a4a]">After</span>
-                      <span className="text-[#7ec87e]">{afterCO2.toFixed(1)}g</span>
+                      <span className="text-[#7ec87e]">{cappedAfterCO2.toFixed(4)}g</span>
                     </div>
                     <div className="h-3 bg-[#0f1a0f] rounded-full overflow-hidden">
                       <div
                         className="h-full bg-[#7ec87e]"
-                        style={{ width: `${(afterCO2 / summary.total_estimated_co2_grams) * 100}%` }}
+                        style={{ width: `${(cappedAfterCO2 / baselineCO2) * 100}%` }}
                       />
                     </div>
                   </div>
