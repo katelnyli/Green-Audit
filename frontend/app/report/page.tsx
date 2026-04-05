@@ -26,10 +26,8 @@ export default function Report() {
         if (status.result) {
           setResult(status.result);
         } else if (status.status === "done" && status.pages_discovered.length === 0) {
-          // Terminated before any pages were found
           setError("Audit was terminated before any pages were discovered");
         } else if (status.status === "done") {
-          // Terminated mid-audit but had discovered pages - show empty result message
           setError("Audit was terminated. No analysis data available yet.");
         } else {
           setError("Audit not complete yet");
@@ -43,10 +41,11 @@ export default function Report() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-[#0a0f0a]">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-[#7ec87e] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <div className="text-[#7ec87e] font-mono">Loading report...</div>
+      <div className="relative flex items-center justify-center min-h-screen bg-[#0a0f0a] overflow-hidden">
+        <div className="dot-grid absolute inset-0 pointer-events-none" />
+        <div className="relative text-center space-y-4">
+          <div className="w-12 h-12 border-2 border-[#7ec87e] border-t-transparent rounded-full animate-spin mx-auto" />
+          <div className="text-[#7ec87e] font-mono text-sm tracking-wider">Loading report…</div>
         </div>
       </div>
     );
@@ -54,11 +53,12 @@ export default function Report() {
 
   if (error || !result) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-[#0a0f0a]">
-        <div className="text-center space-y-4">
-          <div className="text-[#ff6b6b] text-xl">Error</div>
-          <div className="text-[#a0a0a0]">{error || "No data available"}</div>
-          <a href="/" className="text-[#7ec87e] text-sm underline">← New Audit</a>
+      <div className="relative flex items-center justify-center min-h-screen bg-[#0a0f0a] overflow-hidden">
+        <div className="dot-grid absolute inset-0 pointer-events-none" />
+        <div className="relative glass-card rounded-2xl p-10 text-center space-y-4 max-w-sm mx-auto">
+          <div className="text-[#c87e7e] font-mono text-sm uppercase tracking-wider">Error</div>
+          <div className="text-[#808080] text-sm">{error || "No data available"}</div>
+          <a href="/" className="inline-block text-[#7ec87e] font-mono text-xs hover:opacity-80 transition-opacity">← New Audit</a>
         </div>
       </div>
     );
