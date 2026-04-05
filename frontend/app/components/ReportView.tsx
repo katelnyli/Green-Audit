@@ -124,7 +124,6 @@ export default function ReportView({ result }: { result: AuditResult }) {
           </button>
           <button onClick={exportPatch} disabled={fixes.length === 0}
             className="px-4 py-1.5 bg-[#7ec87e] hover:bg-[#6db86d] text-[#0a0f0a] font-mono text-xs font-bold rounded-lg transition-colors disabled:bg-[#3a5a3a] disabled:opacity-40 disabled:cursor-not-allowed">
-            className="px-4 py-1.5 shimmer-btn text-[#0a0f0a] font-sans text-xs font-bold rounded-lg transition-colors disabled:bg-[#3a5a3a] disabled:opacity-40 disabled:cursor-not-allowed">
             Export {fixes.length} fixes ↓
           </button>
           {showExportInfo && (
