@@ -115,7 +115,7 @@ async def crawl(
 
     # ── Measure each page with httpx (concurrent) ─────────────────────────────
     results = await asyncio.gather(
-        *[_measure_page(u) for u in discovered[:MAX_PAGES]],
+        *[_measure_page(u) for u in discovered[:max_pages]],
         return_exceptions=True,
     )
     pages = [r for r in results if not isinstance(r, Exception)]
