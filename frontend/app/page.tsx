@@ -1,128 +1,16 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { startAudit } from "@/app/lib/api";
+import DarkVeil from "@/app/components/DarkVeil";
 
-// ── Beam config ───────────────────────────────────────────────────────────────
-const BEAM_COUNT  = 35;
-const BEAM_COLORS: [number, number, number][] = [
-  [38, 110, 52],   // forest green
-  [24, 95,  82],   // dark teal
-  [62, 115, 30],   // olive
-];
-const NOISE_INTENSITY = 1.75;
-const NOISE_SCALE     = 0.2;
-const SPEED           = 2;
-const BEAM_WIDTH      = 2;
-
-interface Beam {
-  x: number;        // 0–1 normalized
-  y: number;        // current head (px)
-  length: number;   // px
-  speed: number;    // px/frame
-  color: [number, number, number];
-  phase: number;    // noise phase offset
-}
-
-function initBeams(w: number, h: number): Beam[] {
-  return Array.from({ length: BEAM_COUNT }, (_, i) => {
-    const color = BEAM_COLORS[i % BEAM_COLORS.length];
-    return {
-      x:      i / BEAM_COUNT + 0.5 / BEAM_COUNT,
-      y:      -Math.random() * h * 2,
-      length: h * (0.2 + Math.random() * 0.5),
-      speed:  SPEED * (0.7 + Math.random() * 0.6),
-      color,
-      phase:  Math.random() * Math.PI * 2,
-    };
-  });
-}
-
-function drawBeams(
-  ctx: CanvasRenderingContext2D,
-  beams: Beam[],
-  w: number,
-  h: number,
-  t: number,
-  alpha: number,
-) {
-  ctx.clearRect(0, 0, w, h);
-  for (const beam of beams) {
-    // sinusoidal noise wobble
-    const wobble = Math.sin(t * NOISE_SCALE + beam.phase) * NOISE_INTENSITY * (w / BEAM_COUNT) * 1.2;
-    const bx = beam.x * w + wobble;
-
-    const grad = ctx.createLinearGradient(bx, beam.y - beam.length, bx, beam.y);
-    const [r, g, b] = beam.color;
-    grad.addColorStop(0,   `rgba(${r},${g},${b},0)`);
-    grad.addColorStop(0.3, `rgba(${r},${g},${b},${alpha * 0.6})`);
-    grad.addColorStop(0.7, `rgba(${r},${g},${b},${alpha})`);
-    grad.addColorStop(1,   `rgba(${r},${g},${b},${alpha * 0.2})`);
-
-    ctx.fillStyle = grad;
-    ctx.fillRect(bx - BEAM_WIDTH / 2, beam.y - beam.length, BEAM_WIDTH, beam.length);
-  }
-}
-
-// ── Component ─────────────────────────────────────────────────────────────────
 export default function Home() {
-  const router   = useRouter();
+  const router = useRouter();
   const [url, setUrl]           = useState("");
   const [maxPages, setMaxPages] = useState(10);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState("");
-
-  const glowRef = useRef<HTMLCanvasElement>(null);
-  const coreRef = useRef<HTMLCanvasElement>(null);
-  const beamsRef = useRef<Beam[]>([]);
-  const rafRef   = useRef<number>(0);
-
-  useEffect(() => {
-    const glow = glowRef.current;
-    const core = coreRef.current;
-    if (!glow || !core) return;
-
-    const glowCtx = glow.getContext("2d")!;
-    const coreCtx = core.getContext("2d")!;
-
-    const resize = () => {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      glow.width = core.width = w;
-      glow.height = core.height = h;
-      beamsRef.current = initBeams(w, h);
-    };
-    resize();
-    window.addEventListener("resize", resize);
-
-    let t = 0;
-    const loop = () => {
-      t += 0.016;
-      const w = glow.width;
-      const h = glow.height;
-
-      for (const beam of beamsRef.current) {
-        beam.y += beam.speed;
-        if (beam.y - beam.length > h) {
-          beam.y = -beam.length * 0.1;
-        }
-      }
-
-      // Glow layer — wide soft aura
-      drawBeams(glowCtx, beamsRef.current, w, h, t, 0.85);
-      // Core layer — bright spine
-      drawBeams(coreCtx, beamsRef.current, w, h, t, 1.0);
-
-      rafRef.current = requestAnimationFrame(loop);
-    };
-    rafRef.current = requestAnimationFrame(loop);
-
-    return () => {
-      cancelAnimationFrame(rafRef.current);
-      window.removeEventListener("resize", resize);
-    };
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -140,59 +28,30 @@ export default function Home() {
   return (
     <div className="relative flex flex-col min-h-screen bg-[#03070a] overflow-hidden">
 
-      {/* ── Glow canvas (wide soft aura) ─────────────────────────────────────── */}
-      <canvas
-        ref={glowRef}
-        aria-hidden
-        className="absolute inset-0 w-full h-full pointer-events-none"
-        style={{ filter: "blur(62px)", opacity: 0.68, willChange: "transform" }}
-      />
+      {/* ── Dark Veil background ─────────────────────────────────────────────── */}
+      <div className="fixed pointer-events-none" aria-hidden style={{ zIndex: 0, top: 0, left: 0, right: 0, height: "200%" }}>
+        <DarkVeil
+          hueShift={130}
+          speed={0.5}
+          noiseIntensity={0.04}
+          warpAmount={0.08}
+          resolutionScale={0.6}
+        />
+      </div>
 
-      {/* ── Core canvas (bright spine) ────────────────────────────────────────── */}
-      <canvas
-        ref={coreRef}
-        aria-hidden
-        className="absolute inset-0 w-full h-full pointer-events-none"
-        style={{ filter: "blur(2.5px)", opacity: 0.38, willChange: "transform" }}
-      />
-
-      {/* ── Grain texture overlay ─────────────────────────────────────────────── */}
+      {/* ── Radial vignette to keep center readable ───────────────────────── */}
       <div
         aria-hidden
-        className="absolute inset-0 pointer-events-none"
+        className="fixed inset-0 pointer-events-none"
         style={{
-          backgroundImage:
-            `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E")`,
-          backgroundSize: "180px 180px",
-          opacity: 0.038,
-        }}
-      />
-
-      {/* ── Radial vignette ───────────────────────────────────────────────────── */}
-      <div
-        aria-hidden
-        className="absolute inset-0 pointer-events-none"
-        style={{
+          zIndex: 1,
           background:
-            "radial-gradient(ellipse at 50% 45%, transparent 28%, rgba(3,7,10,0.72) 100%)",
+            "radial-gradient(ellipse at 50% 45%, rgba(3,7,10,0.35) 0%, rgba(3,7,10,0.78) 100%)",
         }}
       />
 
-      {/* ── Content ───────────────────────────────────────────────────────────── */}
-      <main className="relative z-10 flex flex-col items-center justify-center flex-1 px-6 gap-8">
-
-        {/* Heading */}
-        <h1
-          className="text-center font-bold tracking-[0.18em] whitespace-nowrap leading-none select-none"
-          style={{
-            fontFamily: "'Clash Display', sans-serif",
-            fontSize: "clamp(1rem, 2.6vw, 1.8rem)",
-            color: "#e4f0e4",
-            textShadow: "0 0 40px rgba(38,110,52,0.45), 0 0 80px rgba(24,95,82,0.2)",
-          }}
-        >
-          FIND YOUR WEBSITE&apos;S CARBON FOOTPRINT
-        </h1>
+      {/* ── Content ──────────────────────────────────────────────────────────── */}
+      <main className="relative flex flex-col items-center justify-center flex-1 px-6 gap-8" style={{ zIndex: 2 }}>
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
@@ -246,7 +105,7 @@ export default function Home() {
         </form>
       </main>
 
-      <footer className="relative z-10 py-5 text-center text-[#233828] text-xs tracking-wider">
+      <footer className="relative py-5 text-center text-[#233828] text-xs tracking-wider" style={{ zIndex: 2 }}>
         Powered by Browser Use
       </footer>
     </div>
