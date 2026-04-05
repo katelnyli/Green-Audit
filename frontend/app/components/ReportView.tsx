@@ -3,490 +3,319 @@
 import { useState } from "react";
 import type { AuditResult, Impact } from "@/app/types/audit";
 
-const IMPACT_COLORS: Record<Impact, string> = {
-  high: "bg-[#2a0f0f] text-[#c87e7e] border-[#4a1a1a]",
-  medium: "bg-[#2a1f0a] text-[#c8a87e] border-[#4a3a1a]",
-  low: "bg-[#0a1f0a] text-[#7ea87e] border-[#1a3a1a]",
+// ── Projection constants ──────────────────────────────────────────────────────
+const MONTHLY_VISITORS = 100_000;
+const ANNUAL_LOADS = MONTHLY_VISITORS * 12; // 1.2 M page loads/year
+const TREE_KG = 22;         // kg CO₂ absorbed per tree per year
+const CAR_KG_PER_KM = 0.12; // kg CO₂ per km driven (avg car)
+
+// ── Grade helpers ─────────────────────────────────────────────────────────────
+type GradeKey = "A" | "B" | "C" | "D" | "F";
+
+const GRADE_COLOR: Record<GradeKey, string> = {
+  A: "#7ec87e", B: "#a8d87e", C: "#d8c87e", D: "#d8957e", F: "#c87e7e",
+};
+const GRADE_DIM: Record<GradeKey, string> = {
+  A: "#2a4a2a", B: "#3a4a1a", C: "#4a3a1a", D: "#4a2a1a", F: "#4a1a1a",
 };
 
-function getScoreColor(score: number): string {
-  if (score < 50) return "#c87e7e";
-  if (score < 70) return "#c8a87e";
-  return "#7ec87e";
+function co2Grade(avgGrams: number): GradeKey {
+  if (avgGrams <= 0.3) return "A";
+  if (avgGrams <= 0.6) return "B";
+  if (avgGrams <= 1.2) return "C";
+  if (avgGrams <= 2.5) return "D";
+  return "F";
+}
+
+const IMPACT_BADGE: Record<Impact, string> = {
+  high:   "bg-[#2a0f0f] text-[#c87e7e] border-[#4a1a1a]",
+  medium: "bg-[#2a1f0a] text-[#c8a87e] border-[#4a3a1a]",
+  low:    "bg-[#0a1f0a] text-[#7ea87e] border-[#1a3a1a]",
+};
+
+function humanFlag(f: string) {
+  const map: Record<string, string> = {
+    suboptimal_image_format: "Unoptimized Images",
+    render_blocking_script:  "Render-Blocking Scripts",
+    oversized_page:          "Oversized Page",
+    high_request_count:      "Too Many Requests",
+    unoptimized_font:        "Unoptimized Fonts",
+    slow_load_time:          "Slow Load Time",
+  };
+  return map[f] ?? f.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function fmtKg(kg: number): string {
+  if (kg >= 1000) return `${(kg / 1000).toFixed(1)}t`;
+  if (kg >= 100)  return `${Math.round(kg)} kg`;
+  if (kg >= 10)   return `${kg.toFixed(1)} kg`;
+  return `${kg.toFixed(2)} kg`;
+}
+
+function fmtKm(km: number): string {
+  if (km >= 10000) return `${(km / 1000).toFixed(0)}k km`;
+  if (km >= 1000)  return `${(km / 1000).toFixed(1)}k km`;
+  return `${Math.round(km)} km`;
 }
 
 function fmt(bytes: number) {
-  if (bytes > 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
+  if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
   return `${(bytes / 1_000).toFixed(0)} KB`;
 }
 
-function safePct(numerator: number, denominator: number): number {
-  if (!denominator || !isFinite(denominator)) return 0;
-  return (numerator / denominator) * 100;
+function safePct(n: number, d: number) {
+  if (!d || !isFinite(d)) return 0;
+  return Math.min(100, (n / d) * 100);
 }
 
+// ── Main component ────────────────────────────────────────────────────────────
 export default function ReportView({ result }: { result: AuditResult }) {
   const { summary, pages, fixes } = result;
-  const [selectedFixes, setSelectedFixes] = useState<Set<number>>(
-    new Set(fixes.map((_, i) => i)) // all checked by default
-  );
-  const [previewMode, setPreviewMode] = useState<"before" | "after">("before");
+  const [expandedFix, setExpandedFix] = useState<number | null>(0);
 
-  // Sort fixes by CO2 savings (highest to lowest)
-  const sortedFixes = [...fixes]
-    .map((fix, i) => ({ fix, index: i }))
-    .sort((a, b) => b.fix.estimated_co2_saved - a.fix.estimated_co2_saved);
+  const numPages      = Math.max(1, summary.total_pages_crawled);
+  const avgCo2PerPage = summary.total_estimated_co2_grams / numPages;
 
-  // Calculate potential CO2 savings
-  const totalPotentialSavings = fixes.reduce((sum, fix) => sum + fix.estimated_co2_saved, 0);
-  const selectedSavings = Array.from(selectedFixes).reduce(
-    (sum, idx) => sum + fixes[idx].estimated_co2_saved,
-    0
-  );
-  // Calculate average performance score
-  const avgPerformance = pages.length > 0
-    ? Math.round(pages.reduce((sum, p) => sum + p.lighthouse.performance, 0) / pages.length)
+  // Annual projections — guaranteed non-zero for display
+  const annualCo2Kg = Math.max(0.01, (avgCo2PerPage * ANNUAL_LOADS) / 1000);
+  const treesNeeded = Math.max(1, Math.ceil(annualCo2Kg / TREE_KG));
+  const drivingKm   = Math.max(1, Math.round(annualCo2Kg / CAR_KG_PER_KM));
+
+  const avgPerf = pages.length > 0
+    ? Math.round(pages.reduce((s, p) => s + p.lighthouse.performance, 0) / pages.length)
     : 0;
+  const showPerf = avgPerf > 0;
 
-  // Annual CO₂ projection at 1,000 daily visitors
-  const avgCo2PerPage = summary.total_pages_crawled > 0
-    ? summary.total_estimated_co2_grams / summary.total_pages_crawled
-    : 0;
-  const annualCo2Kg = (avgCo2PerPage * 1_000 * 365) / 1_000_000; // grams → kg
+  const sortedFixes   = [...fixes].map((fix, i) => ({ fix, i })).sort((a, b) => b.fix.estimated_co2_saved - a.fix.estimated_co2_saved);
+  const totalSavingsG = fixes.reduce((s, f) => s + f.estimated_co2_saved, 0);
+  const savingsPct    = safePct(totalSavingsG, summary.total_estimated_co2_grams || 1);
 
-  // Calculate "after" stats
-  const co2Total = summary.total_estimated_co2_grams || 1; // guard division by zero
-  const afterCO2 = summary.total_estimated_co2_grams - selectedSavings;
-  const afterAnnualCo2Kg = ((avgCo2PerPage - selectedSavings / (summary.total_pages_crawled || 1)) * 1_000 * 365) / 1_000_000;
-  const afterPerformance = Math.min(100, avgPerformance + Math.round(safePct(selectedSavings, co2Total) * 0.3));
+  const afterCo2Kg       = Math.max(0.01, annualCo2Kg * (1 - savingsPct / 100));
+  const afterTreesNeeded = Math.max(1, Math.ceil(afterCo2Kg / TREE_KG));
+  const afterAvgCo2      = avgCo2PerPage * (1 - savingsPct / 100);
+  const currentGrade     = (summary.grade ?? co2Grade(avgCo2PerPage)) as GradeKey;
+  const afterGrade       = co2Grade(afterAvgCo2) as GradeKey;
 
-  const toggleFix = (idx: number) => {
-    setSelectedFixes((prev) => {
-      const next = new Set(prev);
-      next.has(idx) ? next.delete(idx) : next.add(idx);
-      return next;
-    });
-  };
+  const domain = (() => { try { return new URL(result.target_url).hostname; } catch { return result.target_url; } })();
 
   const exportPatch = () => {
-    const domain = new URL(result.target_url).hostname;
     const timestamp = new Date().toISOString();
-    const date = timestamp.split("T")[0];
-
-    // Build GTM tags from selected fixes
-    const tags: any[] = [];
-    const usedTagNames = new Set<string>();
-    selectedFixes.forEach((idx, tagId) => {
-      const fix = fixes[idx];
-      const rawPath = new URL(fix.page_url).pathname || "/";
-      const normalizedPath = rawPath === "/" ? "home" : rawPath.replace(/^\//, "").replace(/\//g, "-");
-      const baseName = `${fix.flag_type} - ${normalizedPath}`;
-      let uniqueName = baseName;
-      let suffix = 2;
-      while (usedTagNames.has(uniqueName)) {
-        uniqueName = `${baseName} (${suffix})`;
-        suffix += 1;
-      }
-      usedTagNames.add(uniqueName);
-      
-      tags.push({
-        tagId: String(tagId + 1),
-        name: uniqueName,
-        type: "html",
-        parameter: [
-          {
-            type: "TEMPLATE",
-            key: "html",
-            value: fix.injection_js || fix.code_snippet
-          }
-        ],
-        firingTriggerId: ["1"]
-      });
+    const used = new Set<string>();
+    const tags = fixes.map((fix, tagId) => {
+      const rawPath = (() => { try { return new URL(fix.page_url).pathname || "/"; } catch { return "/"; } })();
+      const norm = rawPath === "/" ? "home" : rawPath.replace(/^\//, "").replace(/\//g, "-");
+      let name = `${fix.flag_type} - ${norm}`; let s = 2;
+      while (used.has(name)) name = `${fix.flag_type} - ${norm} (${s++})`;
+      used.add(name);
+      return { tagId: String(tagId + 1), name, type: "html", parameter: [{ type: "TEMPLATE", key: "html", value: fix.injection_js || fix.code_snippet }], firingTriggerId: ["1"] };
     });
-
-    // Build GTM container export
-    const gtmExport = {
-      exportFormatVersion: 2,
-      exportTime: timestamp,
-      containerVersion: {
-        name: `Green Audit - ${domain}`,
-        container: {
-          name: `Green Audit GTM - ${domain}`,
-          publicId: `GTM-${domain.replace(/\./g, '-').toUpperCase()}`,
-          usageContext: ["WEB"]
-        },
-        tag: tags,
-        trigger: [
-          {
-            name: "All Pages",
-            type: "PAGEVIEW",
-            triggerId: "1"
-          }
-        ],
-        variable: [],
-        folder: [],
-        builtInVariable: []
-      },
-      metadata: {
-        domain,
-        auditId: result.audit_id,
-        auditUrl: result.target_url,
-        generatedAt: timestamp,
-        totalFixes: selectedFixes.size,
-        avgCO2: summary.total_estimated_co2_grams / summary.total_pages_crawled,
-        grade: summary.grade
-      }
-    };
-
-    const blob = new Blob([JSON.stringify(gtmExport, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `green-audit-gtm-${domain}-${date}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const blob = new Blob([JSON.stringify({ exportFormatVersion: 2, exportTime: timestamp, containerVersion: { name: `Green Audit - ${domain}`, container: { name: `Green Audit GTM - ${domain}`, publicId: `GTM-${domain.replace(/\./g, "-").toUpperCase()}`, usageContext: ["WEB"] }, tag: tags, trigger: [{ name: "All Pages", type: "PAGEVIEW", triggerId: "1" }], variable: [], folder: [], builtInVariable: [] } }, null, 2)], { type: "application/json" });
+    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: `green-audit-${domain}-${timestamp.split("T")[0]}.json` });
+    a.click(); URL.revokeObjectURL(a.href);
   };
 
   return (
-    <div className="flex h-screen bg-[#0a0f0a] text-[#e8ede8]">
-      {/* LEFT COLUMN - 300px */}
-      <div className="w-[300px] border-r border-[#1a2a1a] flex flex-col overflow-y-auto">
-        <div className="p-6 space-y-6">
-          {/* Back link */}
-          <a href="/" className="text-[#4a6a4a] hover:text-[#7ec87e] text-xs font-mono inline-block">
-            ← New audit
-          </a>
+    <div className="min-h-screen bg-[#0a0f0a] text-[#e8ede8]">
 
-          {/* Summary Data */}
-          <div>
-            <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-3">Summary</div>
-            <div className="space-y-2">
-              <div className="bg-[#0f1a0f] border border-[#1a2a1a] rounded p-3">
-                <div className="text-[#2a4a2a] text-xs font-mono uppercase">Pages</div>
-                <div className="text-xl font-mono font-bold text-[#7ec87e]">{summary.total_pages_crawled}</div>
+      {/* ── Sticky top bar ──────────────────────────────────────────── */}
+      <div className="sticky top-0 z-10 bg-[#0a0f0a]/95 backdrop-blur border-b border-[#1a2a1a] px-8 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <a href="/" className="text-[#3a5a3a] hover:text-[#7ec87e] text-xs font-mono transition-colors">← New audit</a>
+          <span className="text-[#1a2a1a]">|</span>
+          <span className="text-[#7ec87e] font-mono text-sm truncate max-w-sm">{domain}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="px-3 py-1 rounded border font-mono text-sm font-bold"
+            style={{ color: GRADE_COLOR[currentGrade], borderColor: GRADE_DIM[currentGrade], backgroundColor: GRADE_DIM[currentGrade] + "60" }}>
+            Grade {currentGrade}
+          </div>
+          <button onClick={exportPatch} disabled={fixes.length === 0}
+            className="px-4 py-1.5 bg-[#7ec87e] text-[#0a0f0a] font-mono text-xs font-bold rounded hover:bg-[#6db86d] transition-colors disabled:opacity-40">
+            Export {fixes.length} fixes ↓
+          </button>
+        </div>
+      </div>
+
+      <div className="max-w-6xl mx-auto px-8 py-8 space-y-8">
+
+        {/* ── Hero cards ──────────────────────────────────────────────── */}
+        <div className="grid grid-cols-4 gap-4">
+          <MetricCard label="Annual CO₂" value={fmtKg(annualCo2Kg)} sub="at 100k visitors/month" accent={GRADE_COLOR[currentGrade]} />
+          <MetricCard label="Trees to Offset" value={`${treesNeeded}`} sub="new trees needed per year" accent="#7ec87e" />
+          <MetricCard label="Car Equivalent" value={fmtKm(drivingKm)} sub="of driving per year" accent="#c8a87e" />
+          <MetricCard
+            label={fixes.length > 0 ? "Reducible With Fixes" : "Pages Scanned"}
+            value={fixes.length > 0 ? `−${Math.round(savingsPct)}%` : `${pages.length}`}
+            sub={fixes.length > 0 ? `${fixes.length} AI fixes available` : "fully audited"}
+            accent="#a87ec8"
+          />
+        </div>
+
+        {/* ── Before / After ──────────────────────────────────────────── */}
+        <div className="grid grid-cols-2 gap-4">
+
+          {/* Before */}
+          <div className="bg-[#0f1a0f] border border-[#1a2a1a] rounded-xl p-6">
+            <div className="text-xs font-mono uppercase text-[#3a5a3a] mb-5 tracking-wider">Current State</div>
+            <div className="flex items-start gap-5">
+              <div className="w-20 h-20 rounded-xl flex items-center justify-center text-4xl font-bold font-mono shrink-0 border-2"
+                style={{ color: GRADE_COLOR[currentGrade], borderColor: GRADE_DIM[currentGrade], backgroundColor: GRADE_DIM[currentGrade] + "60" }}>
+                {currentGrade}
               </div>
-              <div className="bg-[#0f1a0f] border border-[#1a2a1a] rounded p-3">
-                <div className="text-[#2a4a2a] text-xs font-mono uppercase">Transfer</div>
-                <div className="text-xl font-mono font-bold text-[#7ec87e]">{fmt(summary.total_transfer_bytes)}</div>
-              </div>
-              <div className="bg-[#0f1a0f] border border-[#1a2a1a] rounded p-3">
-                <div className="text-[#2a4a2a] text-xs font-mono uppercase">CO₂ Emissions</div>
-                <div className="text-xl font-mono font-bold text-[#7ec87e]">{summary.total_estimated_co2_grams.toFixed(1)}g</div>
-              </div>
-              <div className="bg-[#0f1a0f] border border-[#1a2a1a] rounded p-3">
-                <div className="text-[#2a4a2a] text-xs font-mono uppercase">Grade</div>
-                <div className="text-xl font-mono font-bold text-[#7ec87e]">{summary.grade}</div>
+              <div className="space-y-2.5 flex-1 pt-1">
+                <Stat label="Annual CO₂" value={fmtKg(annualCo2Kg)} color={GRADE_COLOR[currentGrade]} />
+                <Stat label="Trees to offset" value={`${treesNeeded} trees/yr`} color={GRADE_COLOR[currentGrade]} />
+                <Stat label="Total transfer" value={fmt(summary.total_transfer_bytes)} color="#7ec87e" />
+                {showPerf && <Stat label="Avg performance" value={`${avgPerf}/100`} color={avgPerf >= 70 ? "#7ec87e" : avgPerf >= 50 ? "#c8a87e" : "#c87e7e"} />}
               </div>
             </div>
           </div>
 
-          {/* Potential Savings */}
-          {totalPotentialSavings > 0 && (
-            <div className="bg-[#0f1a0f] border border-[#1a2a1a] rounded p-4">
-              <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-2">Potential Savings</div>
-              <div className="text-2xl font-mono font-bold text-[#7ec87e]">
-                {totalPotentialSavings.toFixed(4)}g
+          {/* After */}
+          <div className="bg-[#0f1a0f] border border-[#1a4a1a] rounded-xl p-6 relative overflow-hidden">
+            <div className="absolute inset-0 opacity-[0.04]"
+              style={{ backgroundImage: "radial-gradient(ellipse at 80% 40%, #7ec87e, transparent 65%)" }} />
+            <div className="relative">
+              <div className="text-xs font-mono uppercase text-[#3a6a3a] mb-5 tracking-wider">
+                With {fixes.length} AI Fixes Applied
               </div>
-              <div className="text-xs text-[#2a4a2a] mt-1">
-                {safePct(totalPotentialSavings, co2Total).toFixed(0)}% reduction
+              <div className="flex items-start gap-5">
+                <div className="relative shrink-0">
+                  <div className="w-20 h-20 rounded-xl flex items-center justify-center text-4xl font-bold font-mono border-2"
+                    style={{ color: GRADE_COLOR[afterGrade], borderColor: GRADE_DIM[afterGrade], backgroundColor: GRADE_DIM[afterGrade] + "60" }}>
+                    {afterGrade}
+                  </div>
+                  {afterGrade !== currentGrade && (
+                    <div className="absolute -top-1.5 -right-1.5 bg-[#7ec87e] text-[#0a0f0a] text-xs font-bold px-1.5 py-0.5 rounded-full font-mono leading-none">↑</div>
+                  )}
+                </div>
+                <div className="space-y-2.5 flex-1 pt-1">
+                  <StatDiff label="Annual CO₂" before={fmtKg(annualCo2Kg)} after={fmtKg(afterCo2Kg)} saved={`−${Math.round(savingsPct)}%`} />
+                  <StatDiff label="Trees needed" before={`${treesNeeded}`} after={`${afterTreesNeeded}`} saved={treesNeeded > afterTreesNeeded ? `−${treesNeeded - afterTreesNeeded}` : "same"} />
+                  <Stat label="CO₂ saved/year" value={fmtKg(Math.max(0.001, annualCo2Kg - afterCo2Kg))} color="#7ec87e" />
+                  {showPerf && <Stat label="Performance" value={`${Math.min(100, avgPerf + Math.round(savingsPct * 0.3))}/100`} color="#7ec87e" />}
+                </div>
               </div>
             </div>
-          )}
+          </div>
+        </div>
 
-          {/* Prioritized Actions (sorted highest to lowest) */}
-          <div className="flex-1">
-            <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-3">
-              Actions (by impact)
+        {/* ── AI Fixes ────────────────────────────────────────────────── */}
+        {fixes.length > 0 && (
+          <div>
+            <div className="text-xs font-mono uppercase text-[#3a5a3a] mb-4 tracking-wider">
+              AI-Generated Code Fixes — ranked by impact
             </div>
             <div className="space-y-2">
-              {sortedFixes.map(({ fix, index }, i) => {
-                const impact = summary.top_flags.find(f => f.type === fix.flag_type)?.impact || "medium";
+              {sortedFixes.map(({ fix, i }) => {
+                const impact = (summary.top_flags.find(f => f.type === fix.flag_type)?.impact ?? "medium") as Impact;
+                const fixAnnualKg = Math.max(0.001, (fix.estimated_co2_saved * ANNUAL_LOADS) / 1000);
+                const isOpen = expandedFix === i;
+                const pagePath = (() => { try { return new URL(fix.page_url).pathname || "/"; } catch { return fix.page_url; } })();
                 return (
-                  <div key={index} className="bg-[#0f1a0f] border border-[#1a2a1a] rounded p-3">
-                    <div className="flex items-start gap-2 mb-2">
-                      <input
-                        type="checkbox"
-                        checked={selectedFixes.has(index)}
-                        onChange={() => toggleFix(index)}
-                        className="mt-0.5 w-3.5 h-3.5 rounded border-[#1a2a1a] bg-[#0a0f0a] text-[#7ec87e]"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className={`text-xs px-1.5 py-0.5 rounded inline-block font-mono border mb-1 ${IMPACT_COLORS[impact]}`}>
-                          {impact.toUpperCase()}
-                        </div>
-                        <div className="text-xs font-mono text-[#e8ede8] leading-snug">{fix.flag_type}</div>
-                        <div className="text-xs text-[#4a6a4a] mt-1 line-clamp-2">{fix.description}</div>
-                        <div className="text-xs text-[#7ec87e] font-mono mt-1">
-                          ~{fix.estimated_co2_saved.toFixed(4)}g saved
+                  <div key={i} className="bg-[#0f1a0f] border border-[#1a2a1a] rounded-lg overflow-hidden">
+                    <button
+                      className="w-full flex items-center gap-4 px-5 py-4 hover:bg-[#141f14] transition-colors text-left"
+                      onClick={() => setExpandedFix(isOpen ? null : i)}
+                    >
+                      <span className={`text-xs px-2 py-0.5 rounded border font-mono shrink-0 ${IMPACT_BADGE[impact]}`}>
+                        {impact.toUpperCase()}
+                      </span>
+                      <span className="flex-1 font-mono text-sm text-[#e8ede8]">{humanFlag(fix.flag_type)}</span>
+                      <span className="text-xs font-mono text-[#5a8a5a] shrink-0 hidden sm:block">{pagePath}</span>
+                      <span className="text-xs font-mono text-[#7ec87e] shrink-0 ml-4">saves ~{fmtKg(fixAnnualKg)}/yr</span>
+                      <span className="text-[#3a5a3a] text-xs ml-2 shrink-0">{isOpen ? "▲" : "▼"}</span>
+                    </button>
+                    {isOpen && (
+                      <div className="border-t border-[#1a2a1a] px-5 pb-5 pt-4 space-y-4">
+                        <p className="text-sm text-[#7a9a7a] leading-relaxed">{fix.description}</p>
+                        <div className="rounded-lg bg-[#060d06] border border-[#1a2a1a] overflow-hidden">
+                          <div className="flex items-center justify-between px-4 py-2 border-b border-[#1a2a1a]">
+                            <span className="text-xs font-mono text-[#3a5a3a]">code fix</span>
+                            <button onClick={() => navigator.clipboard?.writeText(fix.code_snippet)}
+                              className="text-xs font-mono text-[#3a5a3a] hover:text-[#7ec87e] transition-colors">
+                              copy
+                            </button>
+                          </div>
+                          <pre className="p-4 text-xs font-mono text-[#a8c8a8] overflow-x-auto leading-relaxed whitespace-pre-wrap max-h-64">{fix.code_snippet}</pre>
                         </div>
                       </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── Page breakdown ───────────────────────────────────────────── */}
+        {pages.length > 0 && (
+          <div>
+            <div className="text-xs font-mono uppercase text-[#3a5a3a] mb-4 tracking-wider">CO₂ Per Page</div>
+            <div className="bg-[#0f1a0f] border border-[#1a2a1a] rounded-xl overflow-hidden">
+              {pages.slice().sort((a, b) => b.estimated_co2_grams - a.estimated_co2_grams).map((page, i, arr) => {
+                const maxCo2 = Math.max(...arr.map(p => p.estimated_co2_grams), 0.0001);
+                const pct = safePct(page.estimated_co2_grams, maxCo2);
+                const co2Str = page.estimated_co2_grams >= 0.01
+                  ? `${page.estimated_co2_grams.toFixed(2)}g`
+                  : `${(page.estimated_co2_grams * 1000).toFixed(2)}mg`;
+                const path = (() => { try { return new URL(page.url).pathname || "/"; } catch { return page.url; } })();
+                const barColor = pct > 70 ? "#c87e7e" : pct > 40 ? "#c8a87e" : "#7ec87e";
+                return (
+                  <div key={i} className={`px-5 py-3 flex items-center gap-4 ${i < arr.length - 1 ? "border-b border-[#1a2a1a]" : ""}`}>
+                    <div className="w-44 font-mono text-xs text-[#5a8a5a] truncate shrink-0">{path}</div>
+                    <div className="flex-1 h-2 bg-[#0a0f0a] rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${Math.max(2, pct)}%`, backgroundColor: barColor }} />
+                    </div>
+                    <div className="w-16 text-right font-mono text-xs shrink-0" style={{ color: barColor }}>{co2Str}</div>
+                    <div className="w-16 text-right font-mono text-xs text-[#3a5a3a] shrink-0">{fmt(page.transfer_size_bytes)}</div>
+                    <div className="w-6 shrink-0">
+                      {page.flags.length > 0 && (
+                        <span className="text-xs font-mono text-[#c87e7e]">{page.flags.length}⚑</span>
+                      )}
                     </div>
                   </div>
                 );
               })}
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Export button at bottom */}
-        <div className="p-4 border-t border-[#1a2a1a] space-y-2">
-          <button
-            onClick={() => setPreviewMode("after")}
-            className="w-full py-2.5 bg-[#7ec87e] text-[#0a0f0a] font-mono text-sm font-semibold rounded hover:bg-[#6db86d] transition-colors"
-          >
-            Preview fixes
-          </button>
-          <button
-            onClick={exportPatch}
-            disabled={selectedFixes.size === 0}
-            className="w-full py-2.5 border border-[#1a2a1a] text-[#7ec87e] font-mono text-sm font-semibold rounded hover:bg-[#0f1a0f] transition-colors disabled:opacity-40"
-          >
-            Export patch ({selectedFixes.size})
-          </button>
-        </div>
+        <div className="h-8" />
       </div>
+    </div>
+  );
+}
 
-      {/* CENTER COLUMN - Stats comparison */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header with Before/After toggle */}
-        <div className="p-4 border-b border-[#1a2a1a] flex items-center justify-between">
-          <div className="flex gap-1 bg-[#0f1a0f] border border-[#1a2a1a] rounded p-1">
-            <button
-              onClick={() => setPreviewMode("before")}
-              className={`px-4 py-1.5 rounded text-sm font-mono transition-colors ${
-                previewMode === "before"
-                  ? "bg-[#7ec87e] text-[#0a0f0a]"
-                  : "text-[#4a6a4a] hover:text-[#7ec87e]"
-              }`}
-            >
-              Before
-            </button>
-            <button
-              onClick={() => setPreviewMode("after")}
-              className={`px-4 py-1.5 rounded text-sm font-mono transition-colors ${
-                previewMode === "after"
-                  ? "bg-[#7ec87e] text-[#0a0f0a]"
-                  : "text-[#4a6a4a] hover:text-[#7ec87e]"
-              }`}
-            >
-              After
-            </button>
-          </div>
-          <div className="text-xs font-mono text-[#4a6a4a]">{result.target_url}</div>
-        </div>
+// ── Sub-components ─────────────────────────────────────────────────────────────
 
-        {/* Stats comparison view */}
-        <div className="flex-1 flex items-center justify-center bg-[#0f1a0f] p-8">
-          <div className="max-w-2xl w-full space-y-8">
-            {/* Header */}
-            <div className="text-center">
-              <h2 className="text-2xl font-mono font-bold text-[#7ec87e] mb-2">
-                {previewMode === "before" ? "Current Impact" : "Projected Impact"}
-              </h2>
-              <p className="text-sm text-[#4a6a4a] font-mono">
-                {previewMode === "after" && `With ${selectedFixes.size} fixes applied`}
-              </p>
-            </div>
+function MetricCard({ label, value, sub, accent }: { label: string; value: string; sub: string; accent: string }) {
+  return (
+    <div className="bg-[#0f1a0f] border border-[#1a2a1a] rounded-xl p-5">
+      <div className="text-xs font-mono uppercase text-[#3a5a3a] mb-2 tracking-wider">{label}</div>
+      <div className="text-3xl font-mono font-bold mb-1 leading-none" style={{ color: accent }}>{value}</div>
+      <div className="text-xs text-[#3a5a3a] font-mono mt-1">{sub}</div>
+    </div>
+  );
+}
 
-            {/* Stats grid */}
-            <div className="grid grid-cols-3 gap-6">
-              {/* CO2 Emissions */}
-              <div className="bg-[#0a0f0a] border border-[#1a2a1a] rounded-lg p-6 text-center">
-                <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-3">CO₂ Emissions</div>
-                <div className="text-4xl font-mono font-bold text-[#7ec87e] mb-2">
-                  {previewMode === "before"
-                    ? summary.total_estimated_co2_grams.toFixed(4)
-                    : afterCO2.toFixed(4)}g
-                </div>
-                {previewMode === "after" && selectedSavings > 0 && (
-                  <div className="text-xs font-mono text-[#7ec87e]">
-                    ↓ {safePct(selectedSavings, co2Total).toFixed(0)}% reduction
-                  </div>
-                )}
-              </div>
+function Stat({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-xs font-mono text-[#3a5a3a]">{label}</span>
+      <span className="text-sm font-mono font-semibold" style={{ color }}>{value}</span>
+    </div>
+  );
+}
 
-              {/* Performance Score */}
-              <div className="bg-[#0a0f0a] border border-[#1a2a1a] rounded-lg p-6 text-center">
-                <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-3">Performance</div>
-                <div className="text-4xl font-mono font-bold text-[#7ec87e] mb-2">
-                  {previewMode === "before" ? avgPerformance : afterPerformance}
-                  <span className="text-xl text-[#4a6a4a]">/100</span>
-                </div>
-                {previewMode === "after" && afterPerformance > avgPerformance && (
-                  <div className="text-xs font-mono text-[#7ec87e]">
-                    ↑ +{afterPerformance - avgPerformance} points
-                  </div>
-                )}
-              </div>
-
-              {/* Annual CO₂ projection */}
-              <div className="bg-[#0a0f0a] border border-[#1a2a1a] rounded-lg p-6 text-center">
-                <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-3">Annual CO₂</div>
-                <div className="text-4xl font-mono font-bold text-[#7ec87e] mb-2">
-                  {previewMode === "before"
-                    ? `${annualCo2Kg.toFixed(1)} kg`
-                    : `${Math.max(0, afterAnnualCo2Kg).toFixed(1)} kg`}
-                </div>
-                <div className="text-xs font-mono text-[#4a6a4a]">at 1k daily visitors</div>
-                {previewMode === "after" && afterAnnualCo2Kg < annualCo2Kg && (
-                  <div className="text-xs font-mono text-[#7ec87e] mt-1">
-                    ↓ {(annualCo2Kg - Math.max(0, afterAnnualCo2Kg)).toFixed(1)} kg/yr saved
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Visual comparison */}
-            {previewMode === "after" && selectedSavings > 0 && (
-              <div className="bg-[#0a0f0a] border border-[#1a2a1a] rounded-lg p-6">
-                <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-4">Impact Reduction</div>
-                <div className="space-y-3">
-                  <div>
-                    <div className="flex justify-between text-xs font-mono mb-2">
-                      <span className="text-[#4a6a4a]">Before</span>
-                      <span className="text-[#c87e7e]">{summary.total_estimated_co2_grams.toFixed(4)}g</span>
-                    </div>
-                    <div className="h-3 bg-[#0f1a0f] rounded-full overflow-hidden">
-                      <div className="h-full bg-[#c87e7e]" style={{ width: "100%" }} />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-xs font-mono mb-2">
-                      <span className="text-[#4a6a4a]">After</span>
-                      <span className="text-[#7ec87e]">{afterCO2.toFixed(4)}g</span>
-                    </div>
-                    <div className="h-3 bg-[#0f1a0f] rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-[#7ec87e]"
-                        style={{ width: `${safePct(afterCO2, co2Total)}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Call to action */}
-            <div className="text-center">
-              <p className="text-sm text-[#4a6a4a] font-mono mb-4">
-                {previewMode === "before"
-                  ? "Select fixes in the left panel to see projected improvements"
-                  : "Export the patch file to implement these optimizations"}
-              </p>
-              {previewMode === "after" && (
-                <button
-                  onClick={exportPatch}
-                  disabled={selectedFixes.size === 0}
-                  className="px-6 py-3 bg-[#7ec87e] text-[#0a0f0a] font-mono text-sm font-semibold rounded hover:bg-[#6db86d] transition-colors disabled:opacity-40"
-                >
-                  Export patch ({selectedFixes.size} fixes)
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* RIGHT COLUMN - 280px */}
-      <div className="w-[280px] border-l border-[#1a2a1a] flex flex-col overflow-y-auto">
-        <div className="p-6 space-y-6">
-          {/* Circular sustainability score */}
-          <div className="flex flex-col items-center">
-            <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-4">Sustainability Score</div>
-            <div
-              className="w-32 h-32 rounded-full flex items-center justify-center"
-              style={{
-                border: `6px solid ${getScoreColor(avgPerformance)}`,
-              }}
-            >
-              <div className="text-center">
-                <div className="text-3xl font-mono font-bold" style={{ color: getScoreColor(avgPerformance) }}>
-                  {avgPerformance}
-                </div>
-                <div className="text-xs font-mono text-[#4a6a4a]">/100</div>
-              </div>
-            </div>
-            <div className="text-xs font-mono text-[#2a4a2a] mt-2">Avg Lighthouse performance</div>
-          </div>
-
-          {/* Score breakdown bars */}
-          <div>
-            <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-3">Score Breakdown</div>
-            <div className="space-y-2">
-              <div>
-                <div className="flex justify-between text-xs font-mono mb-1">
-                  <span className="text-[#4a6a4a]">Performance</span>
-                  <span style={{ color: getScoreColor(avgPerformance) }}>{avgPerformance}</span>
-                </div>
-                <div className="h-1.5 bg-[#0f1a0f] rounded-full overflow-hidden">
-                  <div
-                    className="h-full"
-                    style={{ width: `${avgPerformance}%`, backgroundColor: getScoreColor(avgPerformance) }}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Section heatmap */}
-          {summary.sections_ranked.length > 0 && (
-            <div>
-              <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-3">CO₂ by Section</div>
-              <div className="space-y-2">
-                {summary.sections_ranked.map((section, i) => {
-                  const pct = safePct(section.co2_grams, co2Total);
-                  const color = pct > 40 ? "#c87e7e" : pct > 20 ? "#c8a87e" : "#7ea87e";
-                  return (
-                    <div key={i}>
-                      <div className="flex justify-between text-xs font-mono mb-1">
-                        <span className="text-[#4a6a4a]">/{section.section}</span>
-                        <span style={{ color }}>{pct.toFixed(0)}%</span>
-                      </div>
-                      <div className="h-1.5 bg-[#0f1a0f] rounded-full overflow-hidden">
-                        <div className="h-full" style={{ width: `${pct}%`, backgroundColor: color }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Per-page breakdown */}
-          <div className="flex-1">
-            <div className="text-xs font-mono uppercase text-[#4a6a4a] mb-3">Per-page Breakdown</div>
-            <div className="space-y-2">
-              {pages.map((page, i) => (
-                <div key={i} className="bg-[#0f1a0f] border border-[#1a2a1a] rounded p-2">
-                  <div className="text-xs font-mono text-[#7ec87e] truncate">{new URL(page.url).pathname || "/"}</div>
-                  <div className="grid grid-cols-2 gap-x-2 gap-y-1 mt-1">
-                    <div className="text-xs font-mono text-[#2a4a2a]">
-                      {fmt(page.transfer_size_bytes)}
-                    </div>
-                    <div className="text-xs font-mono text-[#2a4a2a]">
-                      {page.estimated_co2_grams.toFixed(1)}g
-                    </div>
-                  </div>
-                  {page.flags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {page.flags.slice(0, 2).map((flag, j) => (
-                        <div
-                          key={j}
-                          className={`text-xs px-1 py-0.5 rounded font-mono border ${IMPACT_COLORS[flag.impact]}`}
-                        >
-                          {flag.impact[0].toUpperCase()}
-                        </div>
-                      ))}
-                      {page.flags.length > 2 && (
-                        <div className="text-xs text-[#4a6a4a] font-mono">+{page.flags.length - 2}</div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+function StatDiff({ label, before, after, saved }: { label: string; before: string; after: string; saved: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-xs font-mono text-[#3a5a3a]">{label}</span>
+      <div className="flex items-center gap-2 text-xs font-mono">
+        <span className="text-[#5a3a3a] line-through">{before}</span>
+        <span className="text-[#7ec87e] font-semibold">{after}</span>
+        <span className="text-[#3a6a3a]">{saved}</span>
       </div>
     </div>
   );
