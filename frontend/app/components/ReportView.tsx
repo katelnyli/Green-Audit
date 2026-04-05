@@ -55,6 +55,7 @@ function safePct(n: number, d: number) {
 export default function ReportView({ result }: { result: AuditResult }) {
   const { summary, pages, fixes } = result;
   const [expandedFix, setExpandedFix] = useState<number | null>(0);
+  const [showExportInfo, setShowExportInfo] = useState(false);
 
   const numPages      = Math.max(1, summary.total_pages_crawled);
   const avgCo2PerPage = summary.total_estimated_co2_grams / numPages;
@@ -109,11 +110,31 @@ export default function ReportView({ result }: { result: AuditResult }) {
           <span className="text-[#1a2a1a]">|</span>
           <span className="text-[#606060] font-mono text-xs truncate max-w-sm">{domain}</span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 relative">
+          <button 
+            onMouseEnter={() => setShowExportInfo(true)}
+            onMouseLeave={() => setShowExportInfo(false)}
+            className="px-2 py-1.5 text-[#606060] hover:text-[#7ec87e] text-xs transition-colors"
+            title="About GTM export format"
+          >
+            ⓘ
+          </button>
           <button onClick={exportPatch} disabled={fixes.length === 0}
-            className="px-4 py-1.5 shimmer-btn text-[#0a0f0a] font-mono text-xs font-bold rounded-lg transition-colors disabled:bg-[#3a5a3a] disabled:opacity-40 disabled:cursor-not-allowed">
+            className="px-4 py-1.5 bg-[#7ec87e] hover:bg-[#6db86d] text-[#0a0f0a] font-mono text-xs font-bold rounded-lg transition-colors disabled:bg-[#3a5a3a] disabled:opacity-40 disabled:cursor-not-allowed">
             Export {fixes.length} fixes ↓
           </button>
+          {showExportInfo && (
+            <div className="absolute top-full mt-2 right-0 w-64 bg-[#0f1a0f] border border-[#7ec87e] rounded-lg p-4 text-[#a0a0a0] text-xs leading-relaxed z-20 shadow-lg whitespace-normal">
+              <p className="font-mono mb-2 text-[#7ec87e]">GTM Container Format</p>
+              <p>This exports a Google Tag Manager container JSON file. Simply:</p>
+              <ol className="list-decimal list-inside mt-2 space-y-1">
+                <li>Download the JSON file</li>
+                <li>Go to GTM and import the container</li>
+                <li>Merge with your existing container</li>
+                <li>Publish to apply changes to your site</li>
+              </ol>
+            </div>
+          )}
         </div>
       </div>
 
