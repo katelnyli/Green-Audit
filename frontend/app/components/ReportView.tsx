@@ -227,11 +227,6 @@ export default function ReportView({ result }: { result: AuditResult }) {
                     </div>
                     <div className="w-16 text-right font-sans text-xs shrink-0" style={{ color: barColor }}>{co2Str}</div>
                     <div className="w-16 text-right font-sans text-xs text-[#3a5a3a] shrink-0">{fmt(page.transfer_size_bytes)}</div>
-                    <div className="w-6 shrink-0">
-                      {page.flags.length > 0 && (
-                        <span className="text-xs font-sans text-[#c87e7e]">{page.flags.length}</span>
-                      )}
-                    </div>
                   </div>
                 );
               })}
